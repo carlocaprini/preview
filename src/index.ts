@@ -1,5 +1,7 @@
 import { apiError, html, json } from "./http.ts";
-import { authenticateOwner } from "./security/auth.ts";
+import { routePublishingApi } from "./api/publishing.ts";
+import { handleMcp } from "./mcp.ts";
+import { authenticateMcp, authenticateOwner } from "./security/auth.ts";
 import { appHeaders, applyHeaders, contentHeaders } from "./security/headers.ts";
 import { classifyHost } from "./security/hosts.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "./types.ts";
@@ -23,16 +25,23 @@ async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecution
   }
 
   if (url.pathname === "/admin" || url.pathname.startsWith("/admin/") || url.pathname.startsWith("/api/admin/")) {
-    const auth = await authenticateOwner(env, ctx);
-    if (!auth.authorized) return applyHeaders(apiError("access_required", "Owner access required", 403), appHeaders(env));
+    const owner = await authenticateOwner(env, ctx);
+    const mcp = url.pathname.startsWith("/api/admin/uploads/") ? await authenticateMcp(request, env, ctx) : { authorized: false };
+    if (!owner.authorized && !mcp.authorized) {
+      return applyHeaders(apiError("access_required", "Owner access required", 403), appHeaders(env));
+    }
     if (request.method === "GET" && (url.pathname === "/admin" || url.pathname === "/admin/")) {
       return applyHeaders(html(adminFoundationPage()), appHeaders(env));
     }
+    const publishingResponse = await routePublishingApi(request, env);
+    if (publishingResponse) return applyHeaders(publishingResponse, appHeaders(env));
     return applyHeaders(apiError("not_found", "Not found", 404), appHeaders(env));
   }
 
   if (url.pathname === "/mcp") {
-    return applyHeaders(apiError("not_ready", "MCP publishing is not available in this stack layer", 503), appHeaders(env));
+    const auth = await authenticateMcp(request, env, ctx);
+    if (!auth.authorized) return applyHeaders(apiError("access_required", "MCP access required", 403), appHeaders(env));
+    return applyHeaders(await handleMcp(request, env, ctx), appHeaders(env));
   }
 
   if (url.pathname.startsWith("/s/")) {
