@@ -27,12 +27,16 @@ Overlapping uploads record the active version observed when staging began. A sta
 
 ## Browser isolation
 
-The privileged shell embeds the content origin in a sandboxed iframe without `allow-same-origin`. Uploaded code therefore receives an opaque browser origin and cannot read the parent DOM, Access cookies, or privileged API responses. The content origin receives a narrow CSP, no credentials from the application origin, and no bearer-link referrer propagation.
+The privileged shell embeds a separately hosted content origin in a sandboxed iframe. `allow-same-origin` lets a package use its own storage and same-origin asset requests, but the distinct content hostname still prevents it from reading the parent DOM, application-origin Access cookies, or privileged API responses. Top navigation is not permitted. The content origin receives a narrow CSP, no credentials from the application origin, and no bearer-link referrer propagation.
+
+Each ready version receives an opaque public snapshot identifier. A new shell navigation resolves a stable bearer link to the current ready snapshot; an already-open shell keeps its pinned snapshot so HTML, CSS, JavaScript, and media cannot mix versions. Expiry and revocation are rechecked for every asset request, including older pinned snapshots.
 
 Already downloaded bytes cannot be revoked from a browser. Revocation and expiry apply to every subsequent HTML or asset request.
 
 ## Analytics boundary
 
-V1 stores daily counts of meaningful displayed views, last-view timestamps, and bounded visible-time totals. It stores no raw IP address, fingerprint, cookie identifier, recipient identity, per-session history, click events, or individual timeline. A link label is an owner note, not a verified reader.
+V1 stores daily counts of meaningful displayed views, last-view timestamps, and bounded visible-time totals. A meaningful view requires the iframe to load and remain in a visible parent document for two seconds, so passive URL scanners do not count. Visible time is reported in bounded chunks only while the parent document is visible.
+
+It stores no raw IP address, fingerprint, cookie identifier, recipient identity, per-session history, click events, or individual timeline. Random measurement receipts are kept for at most 24 hours solely to make retries idempotent; they contain no identity or event metadata and are deleted opportunistically. A link label is an owner note, not a verified reader.
 
 The parent can measure its own visibility and iframe load. It cannot truthfully observe arbitrary cross-origin document scroll position without injecting cooperative code. V1 therefore does not report scroll or section depth. This preserves the approved requirement to prefer fewer honest measures over false precision.

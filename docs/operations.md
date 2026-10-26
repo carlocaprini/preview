@@ -26,10 +26,10 @@ The deployment token needs only Workers Scripts, D1, R2, Access application/poli
 
 Create reusable default-deny policies and attach them to hostname/path self-hosted applications:
 
-- Owner policy: allow only the configured owner identity for `/admin*`, `/api/admin/*`, and the private preview path.
+- Owner policy: allow only the configured owner identity for `preview.carlocaprini.com/admin*`, `preview.carlocaprini.com/api/admin/*`, and `content.preview.carlocaprini.com/preview/*`.
 - MCP policy: allow only the dedicated service token for `/mcp` and the upload transfer routes it needs.
 
-Keep public `/`, `/s/*`, and the public renderer asset path outside Access. The Worker still rejects unauthorized host/path combinations.
+Keep public `/`, `/assets/viewer.js`, `/api/public/measure`, application-origin `/s/*`, and content-origin `/s/*` outside Access. The Worker still rejects unauthorized host/path combinations. The public fflate and admin scripts contain no credentials; their corresponding APIs remain independently owner-gated.
 
 ## Backup and restore
 
@@ -37,6 +37,6 @@ Export D1 metadata and copy the private R2 version prefixes on a regular schedul
 
 ## Cost guardrails
 
-V1 caps a package at 20 MiB expanded and 50 files. ZIP expansion happens in the authenticated browser or local CLI, never in the Worker. Each file is streamed through one authenticated request. The service rejects oversize manifests before R2 writes and fails closed when D1 or R2 is unavailable.
+V1 caps a package at 20 MiB expanded, 10 MiB per file, and 50 files. ZIP expansion happens in the authenticated browser or local CLI, never in the Worker. The browser inspects declared ZIP sizes before expansion, and the server independently validates the resulting manifest. Each file is streamed through one authenticated request. The service rejects oversize manifests before R2 writes and fails closed when D1 or R2 is unavailable.
 
 Cloudflare quotas and billing prerequisites are account-wide and change over time. Verify the account's current Workers, D1, R2, Access, billing, and custom-domain state immediately before the first production deployment. No workflow enables a paid plan automatically.

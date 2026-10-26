@@ -19,6 +19,7 @@ export interface SharedView {
 }
 
 export interface AssetResponse {
+  linkId?: string;
   body: ReadableStream;
   mediaType: string;
   size: number;
@@ -48,6 +49,12 @@ export class ViewerService {
     return asset ? this.readAsset(asset) : null;
   }
 
+  async resolveSharedAsset(token: string, snapshotId: string, rawPath: string, now = new Date()): Promise<ResolvedAsset | null> {
+    const linkId = await parseShareToken(token, this.signingKey);
+    if (!linkId) return null;
+    return this.repository.resolveSharedAsset(linkId, snapshotId, normalizeAssetPath(rawPath), now);
+  }
+
   async getOwnerPreview(contentId: string) {
     return this.repository.resolveOwnerPreview(contentId);
   }
@@ -61,6 +68,6 @@ export class ViewerService {
   private async readAsset(asset: ResolvedAsset): Promise<AssetResponse | null> {
     const object = await this.objects.get(assetKey(asset.contentId, asset.versionId, asset.path));
     if (!object || object.size !== asset.bytes) return null;
-    return { body: object.body, mediaType: asset.mediaType, size: object.size, etag: object.httpEtag };
+    return { body: object.body, mediaType: asset.mediaType, size: object.size, etag: object.httpEtag, linkId: asset.linkId };
   }
 }

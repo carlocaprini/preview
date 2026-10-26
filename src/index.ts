@@ -1,12 +1,15 @@
 import { apiError, html, json } from "./http.ts";
 import { routePublishingApi } from "./api/publishing.ts";
 import { routeOwnerViewerApi } from "./api/viewer.ts";
+import { routeAdminApi } from "./api/admin.ts";
+import { routeAnalyticsApi } from "./api/analytics.ts";
+import { clientAsset } from "./client-assets.ts";
 import { handleMcp } from "./mcp.ts";
 import { authenticateMcp, authenticateOwner } from "./security/auth.ts";
 import { appHeaders, applyHeaders, contentHeaders } from "./security/headers.ts";
 import { classifyHost } from "./security/hosts.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "./types.ts";
-import { adminFoundationPage, homePage, unavailablePage, viewerPage } from "./ui/pages.ts";
+import { adminPage, homePage, unavailablePage, viewerPage } from "./ui/pages.ts";
 import { D1ViewerRepository } from "./data/viewer.ts";
 import { ViewerService } from "./services/viewer.ts";
 
@@ -27,15 +30,32 @@ async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecution
     return applyHeaders(json({ status: "ok" }), appHeaders(env));
   }
 
+  if (request.method === "GET" && url.pathname.startsWith("/assets/")) {
+    const asset = clientAsset(url.pathname);
+    if (asset) {
+      return applyHeaders(new Response(asset.body, { headers: { "content-type": asset.mediaType } }), appHeaders(env));
+    }
+  }
+
+  if (url.pathname.startsWith("/api/public/")) {
+    const response = await routeAnalyticsApi(request, env);
+    return applyHeaders(response ?? apiError("not_found", "Not found", 404), appHeaders(env));
+  }
+
   if (url.pathname === "/admin" || url.pathname.startsWith("/admin/") || url.pathname.startsWith("/api/admin/")) {
     const owner = await authenticateOwner(env, ctx);
     const mcp = url.pathname.startsWith("/api/admin/uploads/") ? await authenticateMcp(request, env, ctx) : { authorized: false };
     if (!owner.authorized && !mcp.authorized) {
       return applyHeaders(apiError("access_required", "Owner access required", 403), appHeaders(env));
     }
-    if (request.method === "GET" && (url.pathname === "/admin" || url.pathname === "/admin/")) {
-      return applyHeaders(html(adminFoundationPage()), appHeaders(env));
+    if (
+      request.method === "GET" &&
+      (url.pathname === "/admin" || url.pathname === "/admin/" || /^\/admin\/contents\/[^/]+$/u.test(url.pathname))
+    ) {
+      return applyHeaders(html(adminPage()), appHeaders(env));
     }
+    const adminResponse = await routeAdminApi(request, env);
+    if (adminResponse) return applyHeaders(adminResponse, appHeaders(env));
     const publishingResponse = await routePublishingApi(request, env);
     if (publishingResponse) return applyHeaders(publishingResponse, appHeaders(env));
     const viewerResponse = await routeOwnerViewerApi(request, env);
@@ -57,7 +77,7 @@ async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecution
       return applyHeaders(html(unavailablePage(), status), appHeaders(env));
     }
     const source = `${env.CONTENT_ORIGIN}/s/${encodeURIComponent(token)}/v/${resolved.snapshotId}/index.html`;
-    return applyHeaders(html(viewerPage(source)), appHeaders(env));
+    return applyHeaders(html(viewerPage(source, { token, snapshotId: resolved.snapshotId })), appHeaders(env));
   }
 
   return applyHeaders(html(unavailablePage(), 404), appHeaders(env));

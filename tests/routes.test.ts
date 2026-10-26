@@ -33,13 +33,13 @@ describe("origin and access routing", () => {
   it("allows the configured owner into the admin shell", async () => {
     const response = await handleRequest(new Request("https://app.test/admin"), env, owner);
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain("Library foundation ready.");
+    expect(await response.text()).toContain('id="admin-app"');
   });
 
   it("does not expose application routes from the content origin", async () => {
     const response = await handleRequest(new Request("https://content.test/admin"), env, owner);
     expect(response.status).toBe(404);
-    expect(await response.text()).not.toContain("Library foundation ready.");
+    expect(await response.text()).not.toContain('id="admin-app"');
   });
 
   it("rejects alternate hosts such as workers.dev", async () => {

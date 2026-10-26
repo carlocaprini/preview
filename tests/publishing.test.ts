@@ -38,7 +38,7 @@ class SqliteD1 {
   readonly raw = new DatabaseSync(":memory:");
 
   constructor() {
-    for (const name of ["0001_initial.sql", "0002_public_snapshots.sql"]) {
+    for (const name of ["0001_initial.sql", "0002_public_snapshots.sql", "0003_measurement_receipts.sql"]) {
       const migration = fileURLToPath(new URL(`../migrations/${name}`, import.meta.url));
       this.raw.exec(readFileSync(migration, "utf8"));
     }

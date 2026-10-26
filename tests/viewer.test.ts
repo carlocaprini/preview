@@ -36,7 +36,7 @@ class SqliteD1 {
   readonly raw = new DatabaseSync(":memory:");
 
   constructor() {
-    for (const name of ["0001_initial.sql", "0002_public_snapshots.sql"]) {
+    for (const name of ["0001_initial.sql", "0002_public_snapshots.sql", "0003_measurement_receipts.sql"]) {
       const path = fileURLToPath(new URL(`../migrations/${name}`, import.meta.url));
       this.raw.exec(readFileSync(path, "utf8"));
     }
@@ -250,5 +250,55 @@ describe("public and owner viewing", () => {
     expect(missing.status).toBe(404);
     expect(malformed.status).toBe(404);
     expect(await missing.text()).toBe(await malformed.text());
+  });
+
+  it("records only aggregate, replay-protected meaningful views and visible time", async () => {
+    const plan = await publish("Measured", "<h1>Measured</h1>");
+    const link = await publishing.createShareLink({ contentId: plan.contentId, label: "Analytics", validForSeconds: null });
+    const shell = await handleRequest(new Request(link.url), env, anonymous);
+    const source = new URL(iframeSource(await shell.text()));
+    const snapshotId = source.pathname.split("/")[4];
+    const token = new URL(link.url).pathname.slice(3);
+    expect(snapshotId).toBeTruthy();
+
+    const measure = (receiptId: string, kind: "view" | "visible", visibleMs = 0) =>
+      handleRequest(
+        new Request("https://app.test/api/public/measure", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ token, snapshotId, receiptId, kind, visibleMs }),
+        }),
+        env,
+        anonymous,
+      );
+
+    expect((await measure("11111111-1111-4111-8111-111111111111", "view")).status).toBe(200);
+    expect((await measure("11111111-1111-4111-8111-111111111111", "view")).status).toBe(200);
+    expect((await measure("22222222-2222-4222-8222-222222222222", "visible", 15_000)).status).toBe(200);
+    const aggregate = database.raw.prepare("SELECT meaningful_views,active_visible_ms FROM daily_aggregate").get() as {
+      meaningful_views: number;
+      active_visible_ms: number;
+    };
+    expect(aggregate).toEqual({ meaningful_views: 1, active_visible_ms: 15_000 });
+    expect(database.raw.prepare("SELECT COUNT(*) AS count FROM measurement_receipt").get()).toEqual({ count: 2 });
+  });
+
+  it("returns an owner-only two-screen workspace with reconstructed stable links", async () => {
+    const plan = await publish("Admin item", "<h1>Admin</h1>");
+    const link = await publishing.createShareLink({ contentId: plan.contentId, label: "Client", validForSeconds: null });
+    const library = await handleRequest(new Request("https://app.test/api/admin/contents"), env, owner);
+    expect(library.status).toBe(200);
+    expect(await library.json()).toMatchObject({
+      contents: [{ id: plan.contentId, title: "Admin item", activeVersion: 1, activeLinkCount: 1 }],
+    });
+
+    const detail = await handleRequest(new Request(`https://app.test/api/admin/contents/${plan.contentId}`), env, owner);
+    expect(detail.status).toBe(200);
+    expect(await detail.json()).toMatchObject({
+      id: plan.contentId,
+      versions: [{ sequence: 1, status: "ready" }],
+      links: [{ label: "Client", url: link.url, state: "active" }],
+    });
+    expect((await handleRequest(new Request("https://app.test/api/admin/contents"), env, anonymous)).status).toBe(403);
   });
 });
