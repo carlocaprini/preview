@@ -1,0 +1,11 @@
+node_modules/
+.cloudflare/
+.dev.vars
+.env
+dist/
+coverage/
+playwright-report/
+test-results/
+*.log
+.DS_Store
+
