@@ -33,7 +33,7 @@ export default defineConfig(({ mode }) => ({
     observability: {
       enabled: true,
       redactQueryString: true,
-      logs: { enabled: true, invocationLogs: true },
+      logs: { enabled: true, invocationLogs: false },
       traces: { enabled: true },
     },
   },

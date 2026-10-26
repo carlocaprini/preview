@@ -14,7 +14,21 @@ import { D1ViewerRepository } from "./data/viewer.ts";
 import { ViewerService } from "./services/viewer.ts";
 
 function structuredLog(level: "info" | "error", event: string, request: Request, detail?: string): void {
-  const payload = { level, event, method: request.method, path: new URL(request.url).pathname, detail };
+  const pathname = new URL(request.url).pathname;
+  const path = pathname.startsWith("/s/")
+    ? "/s/:token"
+    : pathname.startsWith("/preview/")
+      ? "/preview/:content/:snapshot/:asset"
+      : pathname.startsWith("/api/admin/uploads/")
+        ? "/api/admin/uploads/:upload/:operation"
+        : pathname.startsWith("/api/admin/contents/")
+          ? "/api/admin/contents/:content/:operation"
+          : pathname.startsWith("/api/admin/links/")
+            ? "/api/admin/links/:link/:operation"
+            : ["/", "/health", "/admin", "/mcp", "/api/admin/contents", "/api/public/measure"].includes(pathname)
+              ? pathname
+              : "/other";
+  const payload = { level, event, method: request.method, path, detail };
   if (level === "error") console.error(JSON.stringify(payload));
   else console.log(JSON.stringify(payload));
 }
@@ -126,7 +140,7 @@ export async function handleRequest(
     }
     return host === "content" ? routeContent(request, env, ctx) : routeApp(request, env, ctx);
   } catch (error) {
-    structuredLog("error", "request_failed", request, error instanceof Error ? error.message : "unknown");
+    structuredLog("error", "request_failed", request, error instanceof Error ? error.name : "unknown");
     return apiError("internal_error", "Internal server error", 500);
   }
 }

@@ -13,6 +13,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
+    "test:e2e:server": "tsx scripts/e2e-server.ts",
+    "test:e2e": "playwright test",
     "check": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
@@ -26,8 +28,10 @@
     "@cloudflare/vite-plugin": "2.0.0-beta.v.5",
     "@cloudflare/workers-types": "5.20261026.1",
     "@modelcontextprotocol/client": "2.3.1",
+    "@playwright/test": "^1.64.1",
     "@types/node": "26.6.5",
     "cf": "1.0.0-beta.18",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vite": "8.3.5",
     "vitest": "^4.0.2"

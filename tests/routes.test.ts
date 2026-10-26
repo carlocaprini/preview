@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { handleRequest } from "../src/index.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "../src/types.ts";
 
@@ -43,7 +43,20 @@ describe("origin and access routing", () => {
   });
 
   it("rejects alternate hosts such as workers.dev", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const response = await handleRequest(new Request("https://preview.workers.dev/"), env, anonymous);
     expect(response.status).toBe(404);
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
+  });
+
+  it("redacts bearer tokens and filenames from structured logs", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    await handleRequest(new Request("https://preview.workers.dev/s/top-secret-token/private-name.html"), env, anonymous);
+    const emitted = log.mock.calls.flat().join(" ");
+    expect(emitted).toContain("/s/:token");
+    expect(emitted).not.toContain("top-secret-token");
+    expect(emitted).not.toContain("private-name.html");
+    log.mockRestore();
   });
 });
