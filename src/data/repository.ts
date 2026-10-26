@@ -1,6 +1,6 @@
 import type { SourceFormat, VersionManifest } from "../domain/manifest.ts";
 import { UPLOAD_TTL_MS } from "../domain/limits.ts";
-import { uuid } from "../domain/ids.ts";
+import { randomId, uuid } from "../domain/ids.ts";
 
 export interface ContentRecord {
   id: string;
@@ -97,14 +97,24 @@ export class D1PublishingRepository implements PublishingRepository {
         .first<{ sequence: number }>();
       const sequence = Number(sequenceRow?.sequence ?? 1);
       const versionId = uuid();
+      const publicSnapshotId = randomId(16);
       const uploadId = uuid();
       const createdAt = now.toISOString();
       const expiresAt = new Date(now.getTime() + UPLOAD_TTL_MS).toISOString();
 
       const statements = [
         this.db
-          .prepare("INSERT INTO content_version (id,content_id,sequence,status,source_format,manifest_json,total_bytes,created_at) VALUES (?,?,?,'staging',?,?,?,?)")
-          .bind(versionId, contentId, sequence, sourceFormat, JSON.stringify(manifest), manifest.totalBytes, createdAt),
+          .prepare("INSERT INTO content_version (id,content_id,sequence,status,source_format,manifest_json,total_bytes,created_at,public_snapshot_id) VALUES (?,?,?,'staging',?,?,?,?,?)")
+          .bind(
+            versionId,
+            contentId,
+            sequence,
+            sourceFormat,
+            JSON.stringify(manifest),
+            manifest.totalBytes,
+            createdAt,
+            publicSnapshotId,
+          ),
         this.db
           .prepare("INSERT INTO upload_session (id,content_id,version_id,expected_active_version_id,state,expires_at,created_at) VALUES (?,?,?,?,'open',?,?)")
           .bind(uploadId, contentId, versionId, content.activeVersionId, expiresAt, createdAt),

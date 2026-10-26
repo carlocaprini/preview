@@ -38,8 +38,10 @@ class SqliteD1 {
   readonly raw = new DatabaseSync(":memory:");
 
   constructor() {
-    const migration = fileURLToPath(new URL("../migrations/0001_initial.sql", import.meta.url));
-    this.raw.exec(readFileSync(migration, "utf8"));
+    for (const name of ["0001_initial.sql", "0002_public_snapshots.sql"]) {
+      const migration = fileURLToPath(new URL(`../migrations/${name}`, import.meta.url));
+      this.raw.exec(readFileSync(migration, "utf8"));
+    }
   }
 
   prepare(sql: string): BoundStatement {

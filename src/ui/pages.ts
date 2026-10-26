@@ -23,3 +23,9 @@ export function adminFoundationPage(): string {
 export function unavailablePage(): string {
   return document("Preview unavailable — Carlo Caprini", `<div class="page"><header class="top"><a class="mark" href="https://carlocaprini.com">Carlo Caprini</a><span class="eyebrow">Preview</span></header><main><div><span class="eyebrow">Shared work</span><h1>This preview is no longer available.</h1><p>The link may have expired or the content may no longer be shared.</p><a class="cta" href="https://carlocaprini.com">Explore Carlo’s work</a></div></main></div>`);
 }
+
+export function viewerPage(iframeSource: string): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>Shared preview — Carlo Caprini</title><style>${styles}
+html,body{height:100%;overflow:hidden}.viewer{height:100%;display:grid;grid-template-rows:3.4rem 1fr}.viewer .top{width:100%;padding:.7rem 1rem;background:var(--paper)}.viewer-frame{display:block;width:100%;height:100%;border:0;background:white}@media(max-width:40rem){.viewer{grid-template-rows:3rem}.viewer .top{padding:.55rem .7rem}.viewer .eyebrow{display:none}}
+</style></head><body><div class="viewer"><header class="top"><a class="mark" href="https://carlocaprini.com" target="_blank" rel="noopener noreferrer">Carlo Caprini</a><span class="eyebrow">Shared preview</span></header><iframe class="viewer-frame" title="Shared interactive content" src="${escapeHtml(iframeSource)}" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups" referrerpolicy="no-referrer"></iframe></div></body></html>`;
+}

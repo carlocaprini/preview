@@ -1,11 +1,14 @@
 import { apiError, html, json } from "./http.ts";
 import { routePublishingApi } from "./api/publishing.ts";
+import { routeOwnerViewerApi } from "./api/viewer.ts";
 import { handleMcp } from "./mcp.ts";
 import { authenticateMcp, authenticateOwner } from "./security/auth.ts";
 import { appHeaders, applyHeaders, contentHeaders } from "./security/headers.ts";
 import { classifyHost } from "./security/hosts.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "./types.ts";
-import { adminFoundationPage, homePage, unavailablePage } from "./ui/pages.ts";
+import { adminFoundationPage, homePage, unavailablePage, viewerPage } from "./ui/pages.ts";
+import { D1ViewerRepository } from "./data/viewer.ts";
+import { ViewerService } from "./services/viewer.ts";
 
 function structuredLog(level: "info" | "error", event: string, request: Request, detail?: string): void {
   const payload = { level, event, method: request.method, path: new URL(request.url).pathname, detail };
@@ -35,6 +38,8 @@ async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecution
     }
     const publishingResponse = await routePublishingApi(request, env);
     if (publishingResponse) return applyHeaders(publishingResponse, appHeaders(env));
+    const viewerResponse = await routeOwnerViewerApi(request, env);
+    if (viewerResponse) return applyHeaders(viewerResponse, appHeaders(env));
     return applyHeaders(apiError("not_found", "Not found", 404), appHeaders(env));
   }
 
@@ -45,13 +50,46 @@ async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecution
   }
 
   if (url.pathname.startsWith("/s/")) {
-    return applyHeaders(html(unavailablePage(), 404), appHeaders(env));
+    const token = url.pathname.slice(3);
+    const resolved = await new ViewerService(new D1ViewerRepository(env.DB), env.CONTENT, env.SHARE_SIGNING_KEY).resolveSharedView(token);
+    if (resolved.state !== "active" || !resolved.snapshotId) {
+      const status = resolved.state === "invalid" ? 404 : 410;
+      return applyHeaders(html(unavailablePage(), status), appHeaders(env));
+    }
+    const source = `${env.CONTENT_ORIGIN}/s/${encodeURIComponent(token)}/v/${resolved.snapshotId}/index.html`;
+    return applyHeaders(html(viewerPage(source)), appHeaders(env));
   }
 
   return applyHeaders(html(unavailablePage(), 404), appHeaders(env));
 }
 
-function routeContent(request: Request, env: PreviewEnv): Response {
+async function routeContent(
+  request: Request,
+  env: PreviewEnv,
+  ctx: PreviewExecutionContext,
+): Promise<Response> {
+  const url = new URL(request.url);
+  const service = new ViewerService(new D1ViewerRepository(env.DB), env.CONTENT, env.SHARE_SIGNING_KEY);
+  const shared = url.pathname.match(/^\/s\/([^/]+)\/v\/([^/]+)\/(.+)$/u);
+  if (request.method === "GET" && shared?.[1] && shared[2] && shared[3]) {
+    const asset = await service.getSharedAsset(decodeURIComponent(shared[1]), shared[2], shared[3]);
+    if (asset) {
+      const headers = contentHeaders(env, asset.mediaType);
+      headers.set("Content-Length", String(asset.size));
+      if (asset.etag) headers.set("ETag", asset.etag);
+      return applyHeaders(new Response(asset.body), headers);
+    }
+    return applyHeaders(html(unavailablePage(), 404), contentHeaders(env, "text/html; charset=utf-8"));
+  }
+
+  const owner = url.pathname.match(/^\/preview\/([^/]+)\/v\/([^/]+)\/(.+)$/u);
+  if (request.method === "GET" && owner?.[1] && owner[2] && owner[3]) {
+    const auth = await authenticateOwner(env, ctx);
+    if (!auth.authorized) return applyHeaders(apiError("access_required", "Owner access required", 403), contentHeaders(env, "application/json"));
+    const asset = await service.getOwnerAsset(owner[1], owner[2], owner[3]);
+    if (asset) return applyHeaders(new Response(asset.body), contentHeaders(env, asset.mediaType));
+  }
+
   return applyHeaders(html(unavailablePage(), 404), contentHeaders(env, "text/html; charset=utf-8"));
 }
 
@@ -66,7 +104,7 @@ export async function handleRequest(
       structuredLog("info", "host_rejected", request);
       return apiError("host_not_allowed", "Not found", 404);
     }
-    return host === "content" ? routeContent(request, env) : routeApp(request, env, ctx);
+    return host === "content" ? routeContent(request, env, ctx) : routeApp(request, env, ctx);
   } catch (error) {
     structuredLog("error", "request_failed", request, error instanceof Error ? error.message : "unknown");
     return apiError("internal_error", "Internal server error", 500);

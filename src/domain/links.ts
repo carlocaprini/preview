@@ -23,7 +23,11 @@ async function signature(id: string, secret: string): Promise<string> {
 
 export async function createShareToken(secret: string): Promise<{ id: string; token: string }> {
   const id = randomId(16);
-  return { id, token: `${id}.${await signature(id, secret)}` };
+  return { id, token: await shareTokenForId(id, secret) };
+}
+
+export async function shareTokenForId(id: string, secret: string): Promise<string> {
+  return `${id}.${await signature(id, secret)}`;
 }
 
 export async function parseShareToken(token: string, secret: string): Promise<string | null> {

@@ -6,8 +6,10 @@ import { describe, expect, it } from "vitest";
 describe("initial D1 migration", () => {
   it("applies cleanly and enforces core invariants", () => {
     const database = new DatabaseSync(":memory:");
-    const migrationPath = fileURLToPath(new URL("../migrations/0001_initial.sql", import.meta.url));
-    database.exec(readFileSync(migrationPath, "utf8"));
+    for (const name of ["0001_initial.sql", "0002_public_snapshots.sql"]) {
+      const migrationPath = fileURLToPath(new URL(`../migrations/${name}`, import.meta.url));
+      database.exec(readFileSync(migrationPath, "utf8"));
+    }
 
     const tables = database
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -33,5 +35,8 @@ describe("initial D1 migration", () => {
         "2026-10-26T00:00:00.000Z",
       ),
     ).toThrow();
+
+    const versionColumns = database.prepare("PRAGMA table_info(content_version)").all().map((row) => row.name);
+    expect(versionColumns).toContain("public_snapshot_id");
   });
 });

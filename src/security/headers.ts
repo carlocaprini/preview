@@ -30,6 +30,7 @@ export function contentHeaders(env: PreviewEnv, mediaType: string): Headers {
     ...BASE_HEADERS,
     "Cache-Control": "no-store, private, max-age=0",
     "Content-Type": mediaType,
+    "Access-Control-Allow-Origin": "null",
     "Cross-Origin-Resource-Policy": "cross-origin",
     "Content-Security-Policy": [
       "default-src 'self' https: data: blob:",
