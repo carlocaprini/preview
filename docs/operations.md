@@ -27,7 +27,13 @@ Set these through Cloudflare secrets or the deployment environment; never commit
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 
-The deployment token needs only Workers Scripts, D1, Access application/policy, and DNS/custom-domain permissions scoped to the intended account and zone. Production deployment must fail when any required binding, secret, migration, or domain is missing.
+Keep the deployment token separate from the Access configuration. Scope it to the intended account, database, and zone:
+
+- Workers product `Admin` for the first deploy if the `preview` Worker does not exist yet; after creation, `Editor` is sufficient for ordinary deploys.
+- D1 `Editor` for `preview-site`, because the workflow applies migrations directly.
+- Zone `Workers Routes: Write` for `carlocaprini.com` while connecting or changing the two custom domains.
+
+The CI token does not need Access application or policy permissions: Access is configured manually before the first release. Production deployment must fail when any required binding, secret, migration, or domain is missing.
 
 Configure these protected `production` GitHub environment secrets:
 
@@ -42,10 +48,17 @@ The final workflow runs only after a push to `main`; pull-request workflows neve
 
 ## Access policy shape
 
-Create reusable default-deny policies and attach them to hostname/path self-hosted applications:
+Create path-specific self-hosted applications instead of protecting either complete hostname. Use these policies:
 
-- Owner policy: allow only the configured owner identity for `preview.carlocaprini.com/admin*`, `preview.carlocaprini.com/api/admin/*`, and `content.preview.carlocaprini.com/preview/*`.
-- MCP policy: allow only the dedicated service token for `/mcp` and the upload transfer routes it needs.
+| Host and path | Required Access policy |
+| --- | --- |
+| `preview.carlocaprini.com/admin` and `/admin/*` | `Allow` only the configured owner identity |
+| `preview.carlocaprini.com/api/admin/*`, except the more-specific upload path below | `Allow` only the configured owner identity |
+| `preview.carlocaprini.com/api/admin/uploads/*` | both the owner `Allow` policy and the MCP `Service Auth` policy |
+| `preview.carlocaprini.com/mcp` | MCP `Service Auth` only |
+| `content.preview.carlocaprini.com/preview/*` | `Allow` only the configured owner identity |
+
+Cloudflare Access gives the most-specific application path precedence. The dedicated upload application therefore needs both policies: the owner uses it from the admin UI, while the MCP client uses the service token. Configure the machine policy with action `Service Auth` and an `Include` rule for one dedicated service token. Record its Client ID as `MCP_ACCESS_CLIENT_ID`; store its Client Secret only in the MCP client/connector that sends `CF-Access-Client-Id` and `CF-Access-Client-Secret`, not in this repository or the GitHub deployment environment.
 
 Keep public `/`, `/assets/viewer.js`, `/api/public/measure`, application-origin `/s/*`, and content-origin `/s/*` outside Access. The Worker still rejects unauthorized host/path combinations. The public fflate and admin scripts contain no credentials; their corresponding APIs remain independently owner-gated.
 
