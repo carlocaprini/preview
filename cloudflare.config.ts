@@ -4,11 +4,10 @@ export default defineConfig(({ mode }) => ({
   worker: {
     name: mode === "staging" ? "preview-staging" : "preview",
     entrypoint: "./src/index.ts",
-    compatibilityDate: "2026-10-26",
+    compatibilityDate: "2026-10-27",
     compatibilityFlags: ["nodejs_compat"],
     env: {
-      DB: bindings.d1({ name: mode === "staging" ? "preview-staging" : "preview" }),
-      CONTENT: bindings.r2({ name: mode === "staging" ? "preview-content-staging" : "preview-content" }),
+      DB: bindings.d1({ name: mode === "staging" ? "preview-site-staging" : "preview-site" }),
       OWNER_EMAIL: bindings.secret(),
       MCP_ACCESS_CLIENT_ID: bindings.secret(),
       SHARE_SIGNING_KEY: bindings.secret(),

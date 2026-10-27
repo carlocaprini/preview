@@ -1,6 +1,5 @@
 export interface PreviewEnv {
   DB: D1Database;
-  CONTENT: R2Bucket;
   OWNER_EMAIL: string;
   MCP_ACCESS_CLIENT_ID: string;
   SHARE_SIGNING_KEY: string;

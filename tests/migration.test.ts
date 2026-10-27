@@ -6,7 +6,12 @@ import { describe, expect, it } from "vitest";
 describe("initial D1 migration", () => {
   it("applies cleanly and enforces core invariants", () => {
     const database = new DatabaseSync(":memory:");
-    for (const name of ["0001_initial.sql", "0002_public_snapshots.sql", "0003_measurement_receipts.sql"]) {
+    for (const name of [
+      "0001_initial.sql",
+      "0002_public_snapshots.sql",
+      "0003_measurement_receipts.sql",
+      "0004_d1_asset_storage.sql",
+    ]) {
       const migrationPath = fileURLToPath(new URL(`../migrations/${name}`, import.meta.url));
       database.exec(readFileSync(migrationPath, "utf8"));
     }
@@ -20,6 +25,8 @@ describe("initial D1 migration", () => {
       expect.arrayContaining([
         "content",
         "content_version",
+        "asset_chunk",
+        "asset_payload",
         "daily_aggregate",
         "share_link",
         "upload_session",

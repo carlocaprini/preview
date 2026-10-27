@@ -1,12 +1,13 @@
 import { readJson } from "./body.ts";
 import { apiError, html, json } from "../http.ts";
 import { D1ViewerRepository } from "../data/viewer.ts";
+import { D1AssetStore } from "../data/assets.ts";
 import { ViewerService } from "../services/viewer.ts";
 import type { PreviewEnv } from "../types.ts";
 import { viewerPage } from "../ui/pages.ts";
 
 function viewer(env: PreviewEnv): ViewerService {
-  return new ViewerService(new D1ViewerRepository(env.DB), env.CONTENT, env.SHARE_SIGNING_KEY);
+  return new ViewerService(new D1ViewerRepository(env.DB), new D1AssetStore(env.DB), env.SHARE_SIGNING_KEY);
 }
 
 export async function routeOwnerViewerApi(request: Request, env: PreviewEnv): Promise<Response | null> {

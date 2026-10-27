@@ -21,7 +21,3 @@ export function normalizeAssetPath(input: string): string {
   if (encodeURI(normalized).toLowerCase().includes("%2f")) throw new Error("Invalid asset path");
   return normalized.normalize("NFC");
 }
-
-export function assetKey(contentId: string, versionId: string, path: string): string {
-  return `content/${contentId}/versions/${versionId}/${normalizeAssetPath(path)}`;
-}

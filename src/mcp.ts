@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
 import { D1PublishingRepository } from "./data/repository.ts";
+import { D1AssetStore } from "./data/assets.ts";
 import { PublishingService } from "./services/publishing.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "./types.ts";
 
@@ -25,7 +26,7 @@ function createServer(env: PreviewEnv): McpServer {
   const server = new McpServer({ name: "preview", version: "1.0.0" });
   const publishing = new PublishingService(
     new D1PublishingRepository(env.DB),
-    env.CONTENT,
+    new D1AssetStore(env.DB),
     env.APP_ORIGIN,
     env.SHARE_SIGNING_KEY,
   );

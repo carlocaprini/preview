@@ -7,21 +7,23 @@ GitHub Issues #1–#11 are the product and delivery source of truth. This docume
 Preview uses one Worker deployment on two explicit origins:
 
 - `preview.carlocaprini.com` serves the public frame, owner UI, REST API, and MCP endpoint.
-- `content.preview.carlocaprini.com` serves uploaded HTML and every local asset from private R2.
+- `content.preview.carlocaprini.com` serves uploaded HTML and every local asset from D1-backed version storage.
 
 The Worker rejects every unconfigured hostname. `workers.dev` and preview URLs are disabled. Cloudflare Access protects `/admin*`, `/api/admin/*`, `/mcp`, and owner-preview routes at the edge, while the Worker independently requires an Access context. The owner identity must match `OWNER_EMAIL`; MCP additionally requires the expected Access service-token client ID. Untrusted HTML is never returned from the privileged origin.
 
-Uploaded assets use immutable keys:
+Uploaded assets use immutable version-scoped identities:
 
 ```text
-content/{contentId}/versions/{versionId}/{normalizedRelativePath}
+(version_id, normalized_relative_path, chunk_index)
 ```
 
-Every renderer request resolves an authorized link or owner preview, verifies a ready version and manifest membership, and reads through the R2 binding. The R2 bucket has no public endpoint. Gated responses use `no-store` and `Referrer-Policy: no-referrer`.
+Every renderer request resolves an authorized link or owner preview, verifies a ready version and manifest membership, and reads the corresponding D1 payload. Gated responses use `no-store` and `Referrer-Policy: no-referrer`.
 
 ## Data and activation
 
-D1 holds content metadata, immutable version manifests, upload sessions, asset completeness, share-link state, and daily aggregates. R2 writes happen under a staging version prefix. A version becomes visible only after all declared assets match their manifest and a D1 conditional pointer update marks it ready. R2 upload and D1 cannot form one transaction, so immutable prefixes plus the final metadata pointer are the atomic publication boundary.
+D1 holds content metadata, version manifests, upload sessions, asset payloads, share-link state, and daily aggregates. Each asset is split into ordered 512 KiB BLOB rows so every row stays well below D1's per-value limit. A payload row records the total byte count, chunk count, and SHA-256 entity tag; payload metadata and all chunks are replaced atomically in one D1 batch while the upload is open.
+
+A version becomes visible only after every declared asset matches both its manifest record and stored D1 payload, followed by a conditional pointer update that marks the version ready. Activated versions cannot be uploaded again through the application, so their payloads are immutable. The complete D1 database is the transactional and backup boundary; there is no external object-store subscription or binding.
 
 Overlapping uploads record the active version observed when staging began. A stale upload cannot overwrite a newer activation. Retrying an already committed session is idempotent.
 

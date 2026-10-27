@@ -1,16 +1,7 @@
 import { parseShareToken } from "../domain/links.ts";
-import { assetKey, normalizeAssetPath } from "../security/paths.ts";
+import { normalizeAssetPath } from "../security/paths.ts";
 import { D1ViewerRepository, type LinkState, type ResolvedAsset } from "../data/viewer.ts";
-
-export interface ReadableObject {
-  body: ReadableStream;
-  size: number;
-  httpEtag?: string;
-}
-
-export interface ReadableObjectStore {
-  get(key: string): Promise<ReadableObject | null>;
-}
+import type { AssetStore } from "../data/assets.ts";
 
 export interface SharedView {
   state: LinkState | "invalid";
@@ -29,7 +20,7 @@ export interface AssetResponse {
 export class ViewerService {
   constructor(
     private readonly repository: D1ViewerRepository,
-    private readonly objects: ReadableObjectStore,
+    private readonly assets: AssetStore,
     private readonly signingKey: string,
   ) {}
 
@@ -66,8 +57,8 @@ export class ViewerService {
   }
 
   private async readAsset(asset: ResolvedAsset): Promise<AssetResponse | null> {
-    const object = await this.objects.get(assetKey(asset.contentId, asset.versionId, asset.path));
+    const object = await this.assets.get(asset.versionId, asset.path);
     if (!object || object.size !== asset.bytes) return null;
-    return { body: object.body, mediaType: asset.mediaType, size: object.size, etag: object.httpEtag, linkId: asset.linkId };
+    return { body: object.body, mediaType: asset.mediaType, size: object.size, etag: object.etag, linkId: asset.linkId };
   }
 }

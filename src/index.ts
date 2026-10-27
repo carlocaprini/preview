@@ -11,6 +11,7 @@ import { classifyHost } from "./security/hosts.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "./types.ts";
 import { adminPage, homePage, unavailablePage, viewerPage } from "./ui/pages.ts";
 import { D1ViewerRepository } from "./data/viewer.ts";
+import { D1AssetStore } from "./data/assets.ts";
 import { ViewerService } from "./services/viewer.ts";
 
 function structuredLog(level: "info" | "error", event: string, request: Request, detail?: string): void {
@@ -85,7 +86,11 @@ async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecution
 
   if (url.pathname.startsWith("/s/")) {
     const token = url.pathname.slice(3);
-    const resolved = await new ViewerService(new D1ViewerRepository(env.DB), env.CONTENT, env.SHARE_SIGNING_KEY).resolveSharedView(token);
+    const resolved = await new ViewerService(
+      new D1ViewerRepository(env.DB),
+      new D1AssetStore(env.DB),
+      env.SHARE_SIGNING_KEY,
+    ).resolveSharedView(token);
     if (resolved.state !== "active" || !resolved.snapshotId) {
       const status = resolved.state === "invalid" ? 404 : 410;
       return applyHeaders(html(unavailablePage(), status), appHeaders(env));
@@ -103,7 +108,7 @@ async function routeContent(
   ctx: PreviewExecutionContext,
 ): Promise<Response> {
   const url = new URL(request.url);
-  const service = new ViewerService(new D1ViewerRepository(env.DB), env.CONTENT, env.SHARE_SIGNING_KEY);
+  const service = new ViewerService(new D1ViewerRepository(env.DB), new D1AssetStore(env.DB), env.SHARE_SIGNING_KEY);
   const shared = url.pathname.match(/^\/s\/([^/]+)\/v\/([^/]+)\/(.+)$/u);
   if (request.method === "GET" && shared?.[1] && shared[2] && shared[3]) {
     const asset = await service.getSharedAsset(decodeURIComponent(shared[1]), shared[2], shared[3]);

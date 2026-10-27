@@ -9,8 +9,7 @@ GitHub Issues #1–#11 contain the approved product, UX, technical design, feasi
 ## Architecture
 
 - Cloudflare Worker application and API
-- Private R2 storage with immutable version prefixes
-- D1 metadata and daily aggregate analytics
+- D1 storage for metadata, chunked immutable assets, and daily aggregate analytics
 - Cloudflare Access for the single owner and authenticated MCP client
 - Separate application and content origins for untrusted HTML isolation
 - Two-screen owner workspace for upload, versioning, sharing, and aggregate review

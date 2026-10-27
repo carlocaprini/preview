@@ -1,12 +1,7 @@
-import { assetKey } from "../security/paths.ts";
 import { createShareToken, resolveExpiry } from "../domain/links.ts";
 import { validateManifest, type ManifestFileInput, type SourceFormat } from "../domain/manifest.ts";
 import type { PublishingRepository, StartVersionResult } from "../data/repository.ts";
-
-export interface ObjectStore {
-  put(key: string, body: ReadableStream | ArrayBuffer, options: { httpMetadata: { contentType: string } }): Promise<{ etag: string } | null>;
-  head(key: string): Promise<{ size: number; etag: string } | null>;
-}
+import type { AssetStore } from "../data/assets.ts";
 
 export interface TransferPlan extends StartVersionResult {
   contentId: string;
@@ -17,7 +12,7 @@ export interface TransferPlan extends StartVersionResult {
 export class PublishingService {
   constructor(
     private readonly repository: PublishingRepository,
-    private readonly objects: ObjectStore,
+    private readonly assets: AssetStore,
     private readonly appOrigin: string,
     private readonly signingKey: string,
   ) {}
@@ -75,10 +70,13 @@ export class PublishingService {
     }
     if (!request.body) throw new Error("Asset body is required");
 
-    const result = await this.objects.put(assetKey(upload.contentId, upload.versionId, path), request.body, {
-      httpMetadata: { contentType: asset.mediaType },
+    const result = await this.assets.put({
+      versionId: upload.versionId,
+      path,
+      body: request.body,
+      expectedBytes: asset.expectedBytes,
+      now,
     });
-    if (!result) throw new Error("Asset storage failed");
     await this.repository.markAssetUploaded(upload.versionId, path, contentLength, result.etag, now);
   }
 
@@ -96,9 +94,10 @@ export class PublishingService {
     }
 
     const assets = await this.repository.listAssets(upload.versionId);
+    const storedAssets = await this.assets.listHeads(upload.versionId);
     for (const asset of assets) {
       if (asset.uploadedBytes !== asset.expectedBytes || !asset.etag) throw new Error(`Missing asset: ${asset.path}`);
-      const stored = await this.objects.head(assetKey(upload.contentId, upload.versionId, asset.path));
+      const stored = storedAssets.get(asset.path);
       if (!stored || stored.size !== asset.expectedBytes || stored.etag !== asset.etag) {
         throw new Error(`Stored asset does not match manifest: ${asset.path}`);
       }

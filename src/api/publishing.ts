@@ -2,6 +2,7 @@ import { apiError, json } from "../http.ts";
 import { normalizeAssetPath } from "../security/paths.ts";
 import type { PreviewEnv } from "../types.ts";
 import { D1PublishingRepository } from "../data/repository.ts";
+import { D1AssetStore } from "../data/assets.ts";
 import { PublishingService } from "../services/publishing.ts";
 import type { ManifestFileInput, SourceFormat } from "../domain/manifest.ts";
 import { readJson } from "./body.ts";
@@ -12,7 +13,7 @@ interface VersionBody {
 }
 
 function service(env: PreviewEnv): PublishingService {
-  return new PublishingService(new D1PublishingRepository(env.DB), env.CONTENT, env.APP_ORIGIN, env.SHARE_SIGNING_KEY);
+  return new PublishingService(new D1PublishingRepository(env.DB), new D1AssetStore(env.DB), env.APP_ORIGIN, env.SHARE_SIGNING_KEY);
 }
 
 function message(error: unknown): string {

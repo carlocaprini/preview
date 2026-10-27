@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { authenticateMcp, authenticateOwner, timingSafeEqual } from "../src/security/auth.ts";
 import { classifyHost } from "../src/security/hosts.ts";
-import { assetKey, normalizeAssetPath } from "../src/security/paths.ts";
+import { normalizeAssetPath } from "../src/security/paths.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "../src/types.ts";
 
 const env = {
@@ -53,7 +53,6 @@ describe("security foundation", () => {
 describe("asset path normalization", () => {
   it("keeps safe nested paths under an immutable version prefix", () => {
     expect(normalizeAssetPath("assets/app.js")).toBe("assets/app.js");
-    expect(assetKey("c1", "v2", "assets/app.js")).toBe("content/c1/versions/v2/assets/app.js");
   });
 
   it.each(["../secret", "assets/../secret", "/root", "assets\\app.js", "assets//app.js", "%2e%2e/secret"])(

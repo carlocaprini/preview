@@ -3,8 +3,9 @@ import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it } from "vitest";
 import { D1PublishingRepository } from "../src/data/repository.ts";
+import { D1AssetStore } from "../src/data/assets.ts";
 import { handleRequest } from "../src/index.ts";
-import { PublishingService, type ObjectStore } from "../src/services/publishing.ts";
+import { PublishingService } from "../src/services/publishing.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "../src/types.ts";
 
 class BoundStatement {
@@ -36,7 +37,12 @@ class SqliteD1 {
   readonly raw = new DatabaseSync(":memory:");
 
   constructor() {
-    for (const name of ["0001_initial.sql", "0002_public_snapshots.sql", "0003_measurement_receipts.sql"]) {
+    for (const name of [
+      "0001_initial.sql",
+      "0002_public_snapshots.sql",
+      "0003_measurement_receipts.sql",
+      "0004_d1_asset_storage.sql",
+    ]) {
       const path = fileURLToPath(new URL(`../migrations/${name}`, import.meta.url));
       this.raw.exec(readFileSync(path, "utf8"));
     }
@@ -57,32 +63,6 @@ class SqliteD1 {
       this.raw.exec("ROLLBACK");
       throw error;
     }
-  }
-}
-
-class MemoryObjects implements ObjectStore {
-  readonly entries = new Map<string, { bytes: Uint8Array; etag: string }>();
-
-  async put(key: string, body: ReadableStream | ArrayBuffer): Promise<{ etag: string }> {
-    const bytes = body instanceof ArrayBuffer ? new Uint8Array(body) : new Uint8Array(await new Response(body).arrayBuffer());
-    const etag = `etag-${bytes.byteLength}-${bytes[0] ?? 0}`;
-    this.entries.set(key, { bytes, etag });
-    return { etag };
-  }
-
-  async head(key: string): Promise<{ size: number; etag: string } | null> {
-    const value = this.entries.get(key);
-    return value ? { size: value.bytes.byteLength, etag: value.etag } : null;
-  }
-
-  async get(key: string): Promise<{ body: ReadableStream; size: number; httpEtag: string } | null> {
-    const value = this.entries.get(key);
-    if (!value) return null;
-    return {
-      body: new Response(value.bytes.slice().buffer as ArrayBuffer).body!,
-      size: value.bytes.byteLength,
-      httpEtag: value.etag,
-    };
   }
 }
 
@@ -112,16 +92,13 @@ function iframeSource(page: string): string {
 
 describe("public and owner viewing", () => {
   let database: SqliteD1;
-  let objects: MemoryObjects;
   let env: PreviewEnv;
   let publishing: PublishingService;
 
   beforeEach(() => {
     database = new SqliteD1();
-    objects = new MemoryObjects();
     env = {
       DB: database as unknown as D1Database,
-      CONTENT: objects as unknown as R2Bucket,
       OWNER_EMAIL: "owner@example.com",
       MCP_ACCESS_CLIENT_ID: "mcp-client",
       SHARE_SIGNING_KEY: "viewer-test-signing-key-at-least-thirty-two-bytes",
@@ -131,7 +108,7 @@ describe("public and owner viewing", () => {
     };
     publishing = new PublishingService(
       new D1PublishingRepository(env.DB),
-      objects,
+      new D1AssetStore(database as unknown as D1Database),
       env.APP_ORIGIN,
       env.SHARE_SIGNING_KEY,
     );

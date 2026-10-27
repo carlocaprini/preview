@@ -3,18 +3,16 @@
 ## Required Cloudflare resources
 
 - One Workers application (`preview`)
-- One private R2 Standard bucket (`preview-content`)
-- One D1 database (`preview`)
+- One D1 database (`preview-site`)
 - Two custom domains: `preview.carlocaprini.com` and `content.preview.carlocaprini.com`
 - Cloudflare Access applications/policies for owner and MCP paths only
 
-Do not enable a public R2 development URL. Do not protect the entire Worker with Access because public homepage and bearer-link readers must remain reachable.
+Do not protect the entire Worker with Access because public homepage and bearer-link readers must remain reachable.
 
 For the first production release, create the named resources before merging the release stack:
 
 ```sh
-npx cf d1 create --name preview
-npx cf r2 buckets create-by-name preview-content
+npx cf d1 create --name preview-site
 ```
 
 Record the returned D1 UUID as the protected `CLOUDFLARE_D1_DATABASE_ID` GitHub environment secret. The deployment workflow applies migrations to that exact database before the Worker is updated. `cf deploy` resolves the existing named bindings and may provision only a missing supported binding; it never makes Access or billing decisions.
@@ -29,7 +27,7 @@ Set these through Cloudflare secrets or the deployment environment; never commit
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 
-The deployment token needs only Workers Scripts, D1, R2, Access application/policy, and DNS/custom-domain permissions scoped to the intended account and zone. Production deployment must fail when any required binding, secret, migration, or domain is missing.
+The deployment token needs only Workers Scripts, D1, Access application/policy, and DNS/custom-domain permissions scoped to the intended account and zone. Production deployment must fail when any required binding, secret, migration, or domain is missing.
 
 Configure these protected `production` GitHub environment secrets:
 
@@ -55,9 +53,9 @@ Before the first merge, verify the Access applications and policies in the Cloud
 
 ## Backup and restore
 
-Export D1 metadata and copy the private R2 version prefixes on a regular schedule outside this repository. R2 version prefixes are immutable, but they are not an offsite backup. Store exports encrypted with retention appropriate to the content.
+Export the complete D1 database on a regular schedule outside this repository. The export contains metadata and asset payload chunks and must be stored encrypted with retention appropriate to the content.
 
-Restore D1 first, restore matching R2 keys second, then verify that every active manifest exists before re-enabling share traffic. Perform restore drills against staging; never test a restore in production. Revoking a link removes access but does not erase immutable version objects, so content deletion and retention remain an explicit owner operation outside V1.
+Restore D1, then verify that every active manifest has a matching payload row and the declared number of chunks before re-enabling share traffic. Perform restore drills against staging; never test a restore in production. Revoking a link removes access but does not erase immutable version payloads, so content deletion and retention remain an explicit owner operation outside V1.
 
 ## Release and rollback
 
@@ -69,6 +67,6 @@ Operational logs must never contain share URLs, query strings, bearer tokens, up
 
 ## Cost guardrails
 
-V1 caps a package at 20 MiB expanded, 10 MiB per file, and 50 files. ZIP expansion happens in the authenticated browser or local CLI, never in the Worker. The browser inspects declared ZIP sizes before expansion, and the server independently validates the resulting manifest. Each file is streamed through one authenticated request. The service rejects oversize manifests before R2 writes and fails closed when D1 or R2 is unavailable.
+V1 caps a package at 20 MiB expanded, 10 MiB per file, and 50 files. ZIP expansion happens in the authenticated browser or local CLI, never in the Worker. The browser inspects declared ZIP sizes before expansion, and the server independently validates the resulting manifest. Each file is transferred through one authenticated request, bounded to its declared byte count, hashed, and stored as 512 KiB D1 chunks. The service rejects oversize manifests before writes and fails closed when D1 is unavailable.
 
-Cloudflare quotas and billing prerequisites are account-wide and change over time. Verify the account's current Workers, D1, R2, Access, billing, and custom-domain state immediately before the first production deployment. No workflow enables a paid plan automatically.
+Cloudflare quotas and billing prerequisites are account-wide and change over time. At the time of this implementation, D1 Free allows 500 MB per database and 5 GB per account; asset payloads count toward that capacity, so monitor database size and define a retention/deletion policy before it approaches the limit. Verify the account's current Workers, D1, Access, billing, and custom-domain state immediately before the first production deployment. No workflow enables a paid plan automatically, and V1 has no R2 dependency.

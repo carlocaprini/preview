@@ -98,10 +98,11 @@ test("single HTML upload stages bytes and commits before navigation", async ({ p
 });
 
 test("ZIP upload expands a root package and transfers each declared asset", async ({ page }) => {
+  type UploadedFile = { path: string; size: number };
   const uploaded: string[] = [];
   await page.route("**/api/admin/contents", async (route) => {
     if (route.request().method() === "GET") return route.fulfill({ json: { contents: [] } });
-    const body = route.request().postDataJSON();
+    const body = route.request().postDataJSON() as { sourceFormat: string; files: UploadedFile[] };
     expect(body.sourceFormat).toBe("zip");
     expect(body.files.map((file) => file.path).sort()).toEqual(["assets/app.js", "index.html"]);
     return route.fulfill({

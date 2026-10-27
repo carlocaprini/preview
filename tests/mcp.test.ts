@@ -13,7 +13,6 @@ describe("stateless MCP contract", () => {
       OWNER_EMAIL: "owner@example.com",
       MCP_ACCESS_CLIENT_ID: "mcp-client",
       DB: {} as D1Database,
-      CONTENT: {} as R2Bucket,
     } satisfies PreviewEnv;
     const ctx = { waitUntil() {}, passThroughOnException() {}, props: {} } as unknown as PreviewExecutionContext;
     const transport = new StreamableHTTPClientTransport(new URL("https://preview.example.com/mcp"), {

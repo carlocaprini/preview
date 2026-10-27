@@ -2,6 +2,7 @@ import { readJson } from "./body.ts";
 import { apiError, json } from "../http.ts";
 import { D1AnalyticsRepository, type MeasurementKind } from "../data/analytics.ts";
 import { D1ViewerRepository } from "../data/viewer.ts";
+import { D1AssetStore } from "../data/assets.ts";
 import { ViewerService } from "../services/viewer.ts";
 import type { PreviewEnv } from "../types.ts";
 
@@ -24,7 +25,7 @@ export async function routeAnalyticsApi(request: Request, env: PreviewEnv): Prom
     const visibleMs = body.kind === "visible" ? Number(body.visibleMs) : 0;
     if (!Number.isSafeInteger(visibleMs) || visibleMs < 0 || visibleMs > 30_000) throw new Error("Invalid duration");
 
-    const viewer = new ViewerService(new D1ViewerRepository(env.DB), env.CONTENT, env.SHARE_SIGNING_KEY);
+    const viewer = new ViewerService(new D1ViewerRepository(env.DB), new D1AssetStore(env.DB), env.SHARE_SIGNING_KEY);
     const asset = await viewer.resolveSharedAsset(body.token, body.snapshotId, "index.html");
     if (!asset?.linkId) return apiError("link_unavailable", "Preview unavailable", 404);
     const recorded = await new D1AnalyticsRepository(env.DB).record({

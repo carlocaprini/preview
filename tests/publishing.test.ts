@@ -3,7 +3,8 @@ import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it } from "vitest";
 import { D1PublishingRepository } from "../src/data/repository.ts";
-import { PublishingService, type ObjectStore } from "../src/services/publishing.ts";
+import { D1AssetStore } from "../src/data/assets.ts";
+import { PublishingService } from "../src/services/publishing.ts";
 
 class BoundStatement {
   constructor(
@@ -36,15 +37,22 @@ class BoundStatement {
 
 class SqliteD1 {
   readonly raw = new DatabaseSync(":memory:");
+  prepareCalls = 0;
 
   constructor() {
-    for (const name of ["0001_initial.sql", "0002_public_snapshots.sql", "0003_measurement_receipts.sql"]) {
+    for (const name of [
+      "0001_initial.sql",
+      "0002_public_snapshots.sql",
+      "0003_measurement_receipts.sql",
+      "0004_d1_asset_storage.sql",
+    ]) {
       const migration = fileURLToPath(new URL(`../migrations/${name}`, import.meta.url));
       this.raw.exec(readFileSync(migration, "utf8"));
     }
   }
 
   prepare(sql: string): BoundStatement {
+    this.prepareCalls += 1;
     return new BoundStatement(this.raw.prepare(sql), this);
   }
 
@@ -62,22 +70,6 @@ class SqliteD1 {
   }
 }
 
-class MemoryObjects implements ObjectStore {
-  readonly entries = new Map<string, { bytes: Uint8Array; etag: string }>();
-
-  async put(key: string, body: ReadableStream | ArrayBuffer): Promise<{ etag: string }> {
-    const bytes = body instanceof ArrayBuffer ? new Uint8Array(body) : new Uint8Array(await new Response(body).arrayBuffer());
-    const etag = `${bytes.byteLength}-${bytes[0] ?? 0}-${bytes.at(-1) ?? 0}`;
-    this.entries.set(key, { bytes, etag });
-    return { etag };
-  }
-
-  async head(key: string): Promise<{ size: number; etag: string } | null> {
-    const value = this.entries.get(key);
-    return value ? { size: value.bytes.byteLength, etag: value.etag } : null;
-  }
-}
-
 const signingKey = "integration-test-key-that-is-at-least-thirty-two-bytes";
 
 function assetRequest(bytes: Uint8Array): Request {
@@ -91,12 +83,14 @@ function assetRequest(bytes: Uint8Array): Request {
 describe("staged publishing", () => {
   let database: SqliteD1;
   let service: PublishingService;
+  let assets: D1AssetStore;
 
   beforeEach(() => {
     database = new SqliteD1();
+    assets = new D1AssetStore(database as unknown as D1Database);
     service = new PublishingService(
       new D1PublishingRepository(database as unknown as D1Database),
-      new MemoryObjects(),
+      assets,
       "https://preview.example",
       signingKey,
     );
@@ -178,5 +172,41 @@ describe("staged publishing", () => {
     await expect(service.uploadAsset(plan.uploadId, "index.html", assetRequest(new Uint8Array(9)))).rejects.toThrow(
       "Expected 10 bytes",
     );
+  });
+
+  it("stores bounded D1 chunks and reconstructs an asset byte-for-byte", async () => {
+    const payload = new Uint8Array(1_200_000);
+    for (let index = 0; index < payload.length; index += 1) payload[index] = index % 251;
+    const plan = await service.createContent({
+      title: "Chunked",
+      sourceFormat: "html",
+      files: [{ path: "index.html", size: payload.byteLength }],
+    });
+    await service.uploadAsset(plan.uploadId, "index.html", assetRequest(payload));
+    await service.commit(plan.uploadId);
+
+    const chunks = database.raw
+      .prepare("SELECT COUNT(*) AS count,MAX(length(bytes)) AS largest FROM asset_chunk WHERE version_id = ?")
+      .get(plan.versionId) as { count: number; largest: number };
+    expect(chunks.count).toBe(3);
+    expect(chunks.largest).toBeLessThanOrEqual(512 * 1024);
+
+    const stored = await assets.get(plan.versionId, "index.html");
+    expect(stored?.etag).toMatch(/^"sha256-[a-f0-9]{64}"$/u);
+    expect(new Uint8Array(await new Response(stored?.body).arrayBuffer())).toEqual(payload);
+  });
+
+  it("verifies a maximum-size manifest without one D1 query per asset", async () => {
+    const payload = new Uint8Array([42]);
+    const files = [
+      { path: "index.html", size: 1 },
+      ...Array.from({ length: 49 }, (_, index) => ({ path: `assets/${index}.txt`, size: 1 })),
+    ];
+    const plan = await service.createContent({ title: "Query budget", sourceFormat: "zip", files });
+    for (const file of files) await service.uploadAsset(plan.uploadId, file.path, assetRequest(payload));
+
+    database.prepareCalls = 0;
+    await service.commit(plan.uploadId);
+    expect(database.prepareCalls).toBeLessThanOrEqual(10);
   });
 });
