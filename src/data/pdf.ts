@@ -118,10 +118,12 @@ export class D1PdfRepository {
     for (let offset = 0; offset < bytes.byteLength; offset += PDF_CHUNK_BYTES) {
       chunks.push(bytes.slice(offset, Math.min(offset + PDF_CHUNK_BYTES, bytes.byteLength)));
     }
+    const chunkHashes = await Promise.all(chunks.map((chunk) => sha256Hex(chunk)));
     await this.db.batch([
       this.db.prepare("DELETE FROM pdf_companion_chunk WHERE pdf_id = ?").bind(upload.pdfId),
       ...chunks.map((chunk, index) =>
-        this.db.prepare("INSERT INTO pdf_companion_chunk (pdf_id,chunk_index,bytes) VALUES (?,?,?)").bind(upload.pdfId, index, chunk),
+        this.db.prepare("INSERT INTO pdf_companion_chunk (pdf_id,chunk_index,bytes,sha256) VALUES (?,?,?,?)")
+          .bind(upload.pdfId, index, chunk, chunkHashes[index]),
       ),
       this.db.prepare("UPDATE pdf_companion SET chunk_count = ?,sha256 = ? WHERE id = ? AND status = 'staging'").bind(chunks.length, sha256, upload.pdfId),
       this.db.prepare("UPDATE pdf_upload_session SET state = 'uploaded' WHERE id = ? AND state = 'open'").bind(uploadId),
@@ -132,10 +134,27 @@ export class D1PdfRepository {
     const upload = await this.getUpload(uploadId);
     if (!upload) throw new Error("PDF upload not found");
     if (upload.state === "committed") return this.stateForContent(upload.contentId);
+    if (
+      upload.state === "uploaded" &&
+      upload.status === "ready" &&
+      upload.currentPdfId === upload.pdfId &&
+      upload.activeVersionId === upload.expectedActiveVersionId
+    ) {
+      await this.db.prepare(
+        "UPDATE pdf_upload_session SET state = 'committed',committed_at = COALESCE(committed_at,?) WHERE id = ? AND state = 'uploaded'",
+      ).bind(now.toISOString(), uploadId).run();
+      return this.stateForContent(upload.contentId);
+    }
     if (upload.state !== "uploaded" || upload.status !== "staging") throw new Error("PDF upload is not ready");
     if (Date.parse(upload.expiresAt) <= now.getTime()) throw new Error("PDF upload expired");
-    if (upload.activeVersionId !== upload.expectedActiveVersionId) throw new Error("Active HTML version changed");
-    if (upload.currentPdfId !== upload.expectedCurrentPdfId) throw new Error("PDF companion changed");
+    if (upload.activeVersionId !== upload.expectedActiveVersionId) {
+      await this.markFailedIfOrphan(upload, now);
+      throw new Error("Active HTML version changed");
+    }
+    if (upload.currentPdfId !== upload.expectedCurrentPdfId) {
+      await this.markFailedIfOrphan(upload, now);
+      throw new Error("PDF companion changed");
+    }
 
     const timestamp = now.toISOString();
     const currentClause = upload.expectedCurrentPdfId === null ? "current_pdf_id IS NULL" : "current_pdf_id = ?";
@@ -146,13 +165,40 @@ export class D1PdfRepository {
         `UPDATE content SET current_pdf_id = ?,pdf_approved_html_version_id = ?,updated_at = ?
           WHERE id = ? AND active_version_id = ? AND ${currentClause}`,
       ).bind(upload.pdfId, upload.expectedActiveVersionId, timestamp, upload.contentId, upload.expectedActiveVersionId, ...currentBindings),
-      this.db.prepare("UPDATE pdf_upload_session SET state = 'committed',committed_at = ? WHERE id = ? AND state = 'uploaded'").bind(timestamp, uploadId),
+      this.db.prepare(
+        `UPDATE pdf_companion SET orphaned_at = COALESCE(orphaned_at,?)
+          WHERE id = ? AND NOT EXISTS (SELECT 1 FROM content c WHERE c.current_pdf_id = pdf_companion.id)`,
+      ).bind(timestamp, upload.expectedCurrentPdfId),
+      this.db.prepare(
+        `UPDATE pdf_upload_session SET state = 'committed',committed_at = ?
+          WHERE id = ? AND state = 'uploaded'
+            AND EXISTS (
+              SELECT 1 FROM content c
+               WHERE c.id = pdf_upload_session.content_id
+                 AND c.current_pdf_id = pdf_upload_session.pdf_id
+                 AND c.active_version_id = pdf_upload_session.expected_active_version_id
+            )`,
+      ).bind(timestamp, uploadId),
     ]);
-    if ((results[0]?.meta.changes ?? 0) !== 1 || (results[1]?.meta.changes ?? 0) !== 1 || (results[2]?.meta.changes ?? 0) !== 1) {
-      await this.db.batch([
-        this.db.prepare("UPDATE pdf_companion SET status = 'failed' WHERE id = ?").bind(upload.pdfId),
-        this.db.prepare("UPDATE pdf_upload_session SET state = 'failed' WHERE id = ?").bind(uploadId),
-      ]);
+    if ((results[0]?.meta.changes ?? 0) !== 1 || (results[1]?.meta.changes ?? 0) !== 1 || (results[3]?.meta.changes ?? 0) !== 1) {
+      const current = await this.getUpload(uploadId);
+      if (
+        current?.state === "committed" &&
+        current.status === "ready" &&
+        current.currentPdfId === current.pdfId &&
+        current.activeVersionId === current.expectedActiveVersionId
+      ) {
+        return this.stateForContent(current.contentId);
+      }
+      await this.markFailedIfOrphan(current ?? upload, now);
+      const afterCleanup = await this.getUpload(uploadId);
+      if (
+        afterCleanup?.state === "committed" &&
+        afterCleanup.status === "ready" &&
+        afterCleanup.currentPdfId === afterCleanup.pdfId
+      ) {
+        return this.stateForContent(afterCleanup.contentId);
+      }
       throw new Error("PDF commit conflicted with a newer change");
     }
     return this.stateForContent(upload.contentId);
@@ -169,10 +215,20 @@ export class D1PdfRepository {
   }
 
   async remove(contentId: string, now = new Date()): Promise<boolean> {
-    const result = await this.db.prepare(
-      "UPDATE content SET current_pdf_id = NULL,pdf_approved_html_version_id = NULL,updated_at = ? WHERE id = ? AND current_pdf_id IS NOT NULL",
-    ).bind(now.toISOString(), contentId).run();
-    return (result.meta.changes ?? 0) === 1;
+    const content = await this.db.prepare("SELECT current_pdf_id FROM content WHERE id = ?").bind(contentId).first<Row>();
+    if (!content?.current_pdf_id) return false;
+    const pdfId = String(content.current_pdf_id);
+    const timestamp = now.toISOString();
+    const results = await this.db.batch([
+      this.db.prepare(
+        "UPDATE content SET current_pdf_id = NULL,pdf_approved_html_version_id = NULL,updated_at = ? WHERE id = ? AND current_pdf_id = ?",
+      ).bind(timestamp, contentId, pdfId),
+      this.db.prepare(
+        `UPDATE pdf_companion SET orphaned_at = COALESCE(orphaned_at,?)
+          WHERE id = ? AND NOT EXISTS (SELECT 1 FROM content c WHERE c.current_pdf_id = pdf_companion.id)`,
+      ).bind(timestamp, pdfId),
+    ]);
+    return (results[0]?.meta.changes ?? 0) === 1;
   }
 
   async stateForContent(contentId: string): Promise<PdfCompanionState> {
@@ -209,8 +265,8 @@ export class D1PdfRepository {
     const size = Number(row.total_bytes);
     const chunkCount = Number(row.chunk_count);
     const metadata = await this.db.prepare(
-      "SELECT chunk_index,length(bytes) AS byte_length FROM pdf_companion_chunk WHERE pdf_id = ? ORDER BY chunk_index",
-    ).bind(pdfId).all<{ chunk_index: number; byte_length: number }>();
+      "SELECT chunk_index,length(bytes) AS byte_length,sha256 FROM pdf_companion_chunk WHERE pdf_id = ? ORDER BY chunk_index",
+    ).bind(pdfId).all<{ chunk_index: number; byte_length: number; sha256: string }>();
     if (
       metadata.results.length !== chunkCount ||
       metadata.results.reduce((sum, item) => sum + Number(item.byte_length), 0) !== size ||
@@ -233,6 +289,7 @@ export class D1PdfRepository {
             if (!chunk) throw new Error("PDF chunk is missing");
             const bytes = bytesFromD1(chunk.bytes);
             if (bytes.byteLength !== Number(metadata.results[next]?.byte_length)) throw new Error("PDF chunk is corrupt");
+            if (await sha256Hex(bytes) !== metadata.results[next]?.sha256) throw new Error("PDF chunk is corrupt");
             next += 1;
             controller.enqueue(bytes);
           } catch (error) {
@@ -251,17 +308,29 @@ export class D1PdfRepository {
       .prepare("UPDATE pdf_upload_session SET state = 'expired' WHERE state IN ('open','uploaded') AND expires_at <= ?")
       .bind(timestamp)
       .run();
+    await this.db
+      .prepare(
+        `UPDATE pdf_companion SET orphaned_at = COALESCE(orphaned_at,?)
+          WHERE orphaned_at IS NULL
+            AND NOT EXISTS (SELECT 1 FROM content c WHERE c.current_pdf_id = pdf_companion.id)
+            AND EXISTS (
+              SELECT 1 FROM pdf_upload_session u
+               WHERE u.pdf_id = pdf_companion.id AND u.state IN ('expired','failed')
+            )`,
+      )
+      .bind(timestamp)
+      .run();
     const candidates = await this.db
       .prepare(
         `SELECT p.id
            FROM pdf_companion p
-          WHERE p.created_at < ?
+          WHERE p.orphaned_at < ?
             AND NOT EXISTS (SELECT 1 FROM content c WHERE c.current_pdf_id = p.id)
             AND NOT EXISTS (
               SELECT 1 FROM pdf_upload_session u
                WHERE u.pdf_id = p.id AND u.state IN ('open','uploaded')
             )
-          ORDER BY p.created_at,p.id
+          ORDER BY p.orphaned_at,p.id
           LIMIT ?`,
       )
       .bind(orphanBefore, limit)
@@ -273,13 +342,14 @@ export class D1PdfRepository {
           .prepare(
             `DELETE FROM pdf_companion
               WHERE id = ?
+                AND orphaned_at < ?
                 AND NOT EXISTS (SELECT 1 FROM content c WHERE c.current_pdf_id = pdf_companion.id)
                 AND NOT EXISTS (
                   SELECT 1 FROM pdf_upload_session u
                    WHERE u.pdf_id = pdf_companion.id AND u.state IN ('open','uploaded')
                 )`,
           )
-          .bind(String(row.id)),
+          .bind(String(row.id), orphanBefore),
       ),
     );
     return results.reduce((total, result) => total + Number(result.meta.changes ?? 0), 0);
@@ -301,6 +371,19 @@ export class D1PdfRepository {
       currentPdfId: row.current_pdf_id === null ? null : String(row.current_pdf_id), totalBytes: Number(row.total_bytes),
       status: String(row.status) as UploadRecord["status"],
     };
+  }
+
+  private async markFailedIfOrphan(upload: UploadRecord, now: Date): Promise<void> {
+    const timestamp = now.toISOString();
+    await this.db.batch([
+      this.db.prepare(
+        `UPDATE pdf_companion
+            SET status = CASE WHEN status = 'staging' THEN 'failed' ELSE status END,
+                orphaned_at = COALESCE(orphaned_at,?)
+          WHERE id = ? AND NOT EXISTS (SELECT 1 FROM content c WHERE c.current_pdf_id = pdf_companion.id)`,
+      ).bind(timestamp, upload.pdfId),
+      this.db.prepare("UPDATE pdf_upload_session SET state = 'failed' WHERE id = ? AND state != 'committed'").bind(upload.id),
+    ]);
   }
 }
 

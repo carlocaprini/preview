@@ -56,6 +56,10 @@ describe("initial D1 migration", () => {
     expect(contentColumns).toEqual(expect.arrayContaining(["current_pdf_id", "pdf_approved_html_version_id"]));
     const aggregateColumns = database.prepare("PRAGMA table_info(daily_aggregate)").all().map((row) => row.name);
     expect(aggregateColumns).toEqual(expect.arrayContaining(["pdf_downloads_served", "last_pdf_download_at"]));
+    const pdfColumns = database.prepare("PRAGMA table_info(pdf_companion)").all().map((row) => row.name);
+    expect(pdfColumns).toContain("orphaned_at");
+    const chunkColumns = database.prepare("PRAGMA table_info(pdf_companion_chunk)").all().map((row) => row.name);
+    expect(chunkColumns).toContain("sha256");
     expect(tables).toContain("measurement_receipt");
   });
 

@@ -10,13 +10,15 @@ CREATE TABLE IF NOT EXISTS pdf_companion (
   sha256 TEXT,
   status TEXT NOT NULL CHECK (status IN ('staging', 'ready', 'failed')),
   created_at TEXT NOT NULL,
-  ready_at TEXT
+  ready_at TEXT,
+  orphaned_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS pdf_companion_chunk (
   pdf_id TEXT NOT NULL REFERENCES pdf_companion(id) ON DELETE CASCADE,
   chunk_index INTEGER NOT NULL CHECK (chunk_index >= 0),
   bytes BLOB NOT NULL,
+  sha256 TEXT NOT NULL,
   PRIMARY KEY (pdf_id, chunk_index)
 );
 
@@ -36,5 +38,6 @@ ALTER TABLE daily_aggregate ADD COLUMN pdf_downloads_served INTEGER NOT NULL DEF
 ALTER TABLE daily_aggregate ADD COLUMN last_pdf_download_at TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_pdf_content ON pdf_companion(content_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pdf_orphaned ON pdf_companion(orphaned_at) WHERE orphaned_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_pdf_chunk ON pdf_companion_chunk(pdf_id, chunk_index);
 CREATE INDEX IF NOT EXISTS idx_pdf_upload_expiry ON pdf_upload_session(expires_at);
