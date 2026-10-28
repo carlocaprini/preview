@@ -42,6 +42,9 @@ test("library presents private content and aggregate signals", async ({ page }, 
   await expect(page.getByRole("heading", { name: "Library" })).toBeVisible();
   await expect(page.getByRole("link", { name: /Spatial product narrative/ })).toBeVisible();
   await expect(page.getByText("14")).toBeVisible();
+  await expect(page.locator(".content-row")).toHaveCount(1);
+  await expect(page.getByText("Owner workspace")).toHaveCount(0);
+  await expect(page.locator("header.top").getByRole("button", { name: "Log out" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("library.png"), fullPage: true });
 });
 
@@ -51,8 +54,12 @@ test("content detail exposes only the current update and reversible share contro
   await expect(page.getByRole("heading", { name: "Spatial product narrative" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Share links" })).toBeVisible();
   await expect(page.getByText("Client review")).toBeVisible();
+  await expect(page.getByText("ZIP content", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Current HTML" })).toHaveCount(0);
+  await expect(page.getByText("Version 3", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("Version 2", { exact: false })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Update HTML" })).toBeVisible();
-  await expect(page.getByText("Versions", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Edit expiry" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Revoke" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Upload PDF" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("content-detail.png"), fullPage: true });

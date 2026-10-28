@@ -1,9 +1,21 @@
 import { expect, test } from "@playwright/test";
 
+test("homepage uses the compact Preview header and canonical website actions", async ({ page }) => {
+  await page.goto("/");
+  const header = page.locator("header.top");
+  await expect(header.getByRole("link", { name: "Preview" })).toHaveAttribute("href", "/");
+  await expect(header.getByText("Carlo Caprini")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Explore work" })).toHaveAttribute("href", "https://carlocaprini.com/work/");
+  await expect(page.getByRole("link", { name: "Explore thinking" })).toHaveAttribute("href", "https://carlocaprini.com/thinking/");
+  await expect(page.getByRole("link", { name: "Get in touch" })).toHaveAttribute("href", "https://carlocaprini.com/#contact");
+});
+
 test("public shell is generic, branded, and contains a constrained content frame", async ({ page }) => {
   await page.route("**/api/public/measure", (route) => route.fulfill({ json: { recorded: true } }));
   await page.goto("/viewer");
-  await expect(page.getByRole("link", { name: "Carlo Caprini" })).toBeVisible();
+  const header = page.locator("header.top");
+  await expect(header.getByRole("link", { name: "Preview" })).toBeVisible();
+  await expect(header.getByText("Shared preview")).toHaveCount(0);
   const frame = page.locator("iframe");
   await expect(frame).toHaveAttribute("referrerpolicy", "no-referrer");
   await expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-modals allow-popups");
@@ -105,6 +117,7 @@ test("an already-open shared link follows real owner login and logout for view a
 test("unavailable state never distinguishes expiry from revocation", async ({ page }) => {
   const response = await page.goto("/unavailable");
   expect(response?.status()).toBe(410);
+  await expect(page.locator("header.top").getByRole("link", { name: "Preview" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "This preview is no longer available." })).toBeVisible();
   await expect(page.getByText("expired or the content may no longer be shared")).toBeVisible();
 });
