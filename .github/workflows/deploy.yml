@@ -42,7 +42,18 @@ jobs:
         run: npx cf user tokens verify
       - name: Apply D1 migrations
         run: npx cf d1 migrations apply "$CLOUDFLARE_D1_DATABASE_ID" --dir migrations
+      - name: Prepare Worker secrets
+        run: |
+          node --input-type=module -e '
+            import { writeFileSync } from "node:fs";
+            const names = ["OWNER_PASSWORD", "MCP_BEARER_TOKEN", "SHARE_SIGNING_KEY"];
+            const secrets = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+            writeFileSync(`${process.env.RUNNER_TEMP}/preview-worker-secrets.json`, JSON.stringify(secrets), { mode: 0o600 });
+          '
       - name: Deploy immutable build
-        run: npx cf deploy --message "main@${GITHUB_SHA}"
+        run: npx cf deploy --message "main@${GITHUB_SHA}" --secrets-file "$RUNNER_TEMP/preview-worker-secrets.json"
+      - name: Remove temporary Worker secrets
+        if: always()
+        run: rm -f "$RUNNER_TEMP/preview-worker-secrets.json"
       - name: Verify production boundaries
         run: node scripts/verify-production.mjs
