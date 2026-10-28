@@ -9,7 +9,7 @@ Preview uses one Worker deployment on two explicit origins:
 - `preview.carlocaprini.com` serves the public frame, owner UI, REST API, and MCP endpoint.
 - `content.preview.carlocaprini.com` serves uploaded HTML and every local asset from D1-backed version storage.
 
-The Worker rejects every unconfigured hostname. `workers.dev` and preview URLs are disabled. Cloudflare Access protects `/admin*`, `/api/admin/*`, `/mcp`, and owner-preview routes at the edge, while the Worker independently requires an Access context. The owner identity must match `OWNER_EMAIL`; MCP additionally requires the expected Access service-token client ID. Untrusted HTML is never returned from the privileged origin.
+The Worker rejects every unconfigured hostname. `workers.dev` and preview URLs are disabled. Owner authentication is implemented inside the Worker: a high-entropy `OWNER_PASSWORD` creates a signed, 12-hour, host-only `Secure` and `HttpOnly` session cookie. State-changing owner requests must also have the exact application origin. MCP uses a separate high-entropy Bearer token and is accepted only by `/mcp` and the upload-transfer routes it needs. Untrusted HTML is never returned from the privileged origin.
 
 Uploaded assets use immutable version-scoped identities:
 
@@ -29,7 +29,7 @@ Overlapping uploads record the active version observed when staging began. A sta
 
 ## Browser isolation
 
-The privileged shell embeds a separately hosted content origin in a sandboxed iframe. `allow-same-origin` lets a package use its own storage and same-origin asset requests, but the distinct content hostname still prevents it from reading the parent DOM, application-origin Access cookies, or privileged API responses. Top navigation is not permitted. The content origin receives a narrow CSP, no credentials from the application origin, and no bearer-link referrer propagation.
+The privileged shell embeds a separately hosted content origin in a sandboxed iframe. `allow-same-origin` lets a package use its own storage and same-origin asset requests, but the distinct content hostname still prevents it from reading the parent DOM, the host-only owner cookie, or privileged API responses. Owner previews receive a signed, one-hour capability URL instead of a cookie. Top navigation is not permitted. The content origin receives a narrow CSP, no credentials from the application origin, and no bearer-link referrer propagation.
 
 Each ready version receives an opaque public snapshot identifier. A new shell navigation resolves a stable bearer link to the current ready snapshot; an already-open shell keeps its pinned snapshot so HTML, CSS, JavaScript, and media cannot mix versions. Expiry and revocation are rechecked for every asset request, including older pinned snapshots.
 

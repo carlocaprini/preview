@@ -1,7 +1,7 @@
 export interface PreviewEnv {
   DB: D1Database;
-  OWNER_EMAIL: string;
-  MCP_ACCESS_CLIENT_ID: string;
+  OWNER_PASSWORD: string;
+  MCP_BEARER_TOKEN: string;
   SHARE_SIGNING_KEY: string;
   APP_ORIGIN: string;
   CONTENT_ORIGIN: string;

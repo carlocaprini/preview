@@ -36,7 +36,7 @@ export async function parseShareToken(token: string, secret: string): Promise<st
   const [id, presented] = parts;
   if (!id || !presented || !/^[A-Za-z0-9_-]{22}$/u.test(id)) return null;
   const expected = await signature(id, secret);
-  return timingSafeEqual(presented, expected) ? id : null;
+  return (await timingSafeEqual(presented, expected)) ? id : null;
 }
 
 export function resolveExpiry(createdAt: Date, validForSeconds: number | null): string | null {

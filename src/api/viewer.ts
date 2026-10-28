@@ -5,6 +5,7 @@ import { D1AssetStore } from "../data/assets.ts";
 import { ViewerService } from "../services/viewer.ts";
 import type { PreviewEnv } from "../types.ts";
 import { viewerPage } from "../ui/pages.ts";
+import { createOwnerPreviewToken } from "../security/auth.ts";
 
 function viewer(env: PreviewEnv): ViewerService {
   return new ViewerService(new D1ViewerRepository(env.DB), new D1AssetStore(env.DB), env.SHARE_SIGNING_KEY);
@@ -16,7 +17,12 @@ export async function routeOwnerViewerApi(request: Request, env: PreviewEnv): Pr
   if (request.method === "GET" && previewMatch?.[1]) {
     const resolved = await viewer(env).getOwnerPreview(previewMatch[1]);
     if (!resolved) return apiError("preview_unavailable", "No active version is available", 404);
-    const source = `${env.CONTENT_ORIGIN}/preview/${resolved.contentId}/v/${resolved.snapshotId}/index.html`;
+    const token = await createOwnerPreviewToken(
+      resolved.contentId,
+      resolved.snapshotId,
+      env.SHARE_SIGNING_KEY,
+    );
+    const source = `${env.CONTENT_ORIGIN}/preview/${encodeURIComponent(token)}/v/${resolved.snapshotId}/index.html`;
     return html(viewerPage(source));
   }
 

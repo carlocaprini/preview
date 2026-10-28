@@ -20,8 +20,8 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
-      OWNER_EMAIL: ${{ secrets.OWNER_EMAIL }}
-      MCP_ACCESS_CLIENT_ID: ${{ secrets.MCP_ACCESS_CLIENT_ID }}
+      OWNER_PASSWORD: ${{ secrets.OWNER_PASSWORD }}
+      MCP_BEARER_TOKEN: ${{ secrets.MCP_BEARER_TOKEN }}
       SHARE_SIGNING_KEY: ${{ secrets.SHARE_SIGNING_KEY }}
       APP_ORIGIN: https://preview.carlocaprini.com
       CONTENT_ORIGIN: https://content.preview.carlocaprini.com

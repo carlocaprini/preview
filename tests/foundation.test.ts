@@ -1,26 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { authenticateMcp, authenticateOwner, timingSafeEqual } from "../src/security/auth.ts";
+import {
+  authenticateMcp,
+  authenticateOwner,
+  createOwnerPreviewToken,
+  createOwnerSession,
+  OWNER_SESSION_COOKIE,
+  parseOwnerPreviewToken,
+  timingSafeEqual,
+} from "../src/security/auth.ts";
 import { classifyHost } from "../src/security/hosts.ts";
 import { normalizeAssetPath } from "../src/security/paths.ts";
-import type { PreviewEnv, PreviewExecutionContext } from "../src/types.ts";
+import type { PreviewEnv } from "../src/types.ts";
 
 const env = {
-  OWNER_EMAIL: "owner@example.com",
-  MCP_ACCESS_CLIENT_ID: "mcp-client",
-  SHARE_SIGNING_KEY: "test-signing-key",
+  OWNER_PASSWORD: "test-owner-password-with-enough-entropy",
+  MCP_BEARER_TOKEN: "test-mcp-bearer-token-with-enough-entropy",
+  SHARE_SIGNING_KEY: "test-signing-key-with-enough-entropy",
   APP_ORIGIN: "https://preview.example.com",
   CONTENT_ORIGIN: "https://content.preview.example.com",
   ENVIRONMENT: "test",
 } as PreviewEnv;
-
-function context(email?: string): PreviewExecutionContext {
-  return {
-    access: email ? { getIdentity: async () => ({ email }) } : undefined,
-    waitUntil() {},
-    passThroughOnException() {},
-    props: {},
-  } as unknown as PreviewExecutionContext;
-}
 
 describe("security foundation", () => {
   it("classifies only configured application and content hosts", () => {
@@ -29,24 +28,40 @@ describe("security foundation", () => {
     expect(classifyHost(new Request("https://preview.example.workers.dev/"), env)).toBe("unknown");
   });
 
-  it("requires the configured Access identity for owner routes", async () => {
-    expect((await authenticateOwner(env, context())).authorized).toBe(false);
-    expect((await authenticateOwner(env, context("attacker@example.com"))).authorized).toBe(false);
-    expect((await authenticateOwner(env, context("OWNER@example.com"))).authorized).toBe(true);
-  });
-
-  it("requires both Access and the expected service client id for MCP", async () => {
-    const validRequest = new Request("https://preview.example.com/mcp", {
-      headers: { "cf-access-client-id": "mcp-client" },
+  it("requires a valid, unexpired signed owner session", async () => {
+    const now = new Date("2026-10-28T10:00:00.000Z");
+    const token = await createOwnerSession(env, now, 60);
+    const valid = new Request("https://preview.example.com/admin", {
+      headers: { cookie: `${OWNER_SESSION_COOKIE}=${token}` },
     });
-    expect((await authenticateMcp(validRequest, env, context())).authorized).toBe(false);
-    expect((await authenticateMcp(validRequest, env, context("service@example.com"))).authorized).toBe(true);
+    expect((await authenticateOwner(valid, env, new Date(now.getTime() + 30_000))).authorized).toBe(true);
+    expect((await authenticateOwner(new Request(valid, { headers: { cookie: `${OWNER_SESSION_COOKIE}=${token}x` } }), env, now)).authorized).toBe(false);
+    expect((await authenticateOwner(valid, env, new Date(now.getTime() + 61_000))).authorized).toBe(false);
   });
 
-  it("compares secrets without an early exit", () => {
-    expect(timingSafeEqual("same", "same")).toBe(true);
-    expect(timingSafeEqual("same", "diff")).toBe(false);
-    expect(timingSafeEqual("short", "much-longer")).toBe(false);
+  it("requires the configured Bearer token for MCP", async () => {
+    const validRequest = new Request("https://preview.example.com/mcp", {
+      headers: { authorization: `Bearer ${env.MCP_BEARER_TOKEN}` },
+    });
+    expect((await authenticateMcp(new Request("https://preview.example.com/mcp"), env)).authorized).toBe(false);
+    expect((await authenticateMcp(validRequest, env)).authorized).toBe(true);
+  });
+
+  it("signs short-lived owner preview capabilities", async () => {
+    const now = new Date("2026-10-28T10:00:00.000Z");
+    const token = await createOwnerPreviewToken("content", "snapshot", env.SHARE_SIGNING_KEY, now, 60);
+    expect(await parseOwnerPreviewToken(token, env.SHARE_SIGNING_KEY, new Date(now.getTime() + 30_000))).toEqual({
+      contentId: "content",
+      snapshotId: "snapshot",
+    });
+    expect(await parseOwnerPreviewToken(`${token}x`, env.SHARE_SIGNING_KEY, now)).toBeNull();
+    expect(await parseOwnerPreviewToken(token, env.SHARE_SIGNING_KEY, new Date(now.getTime() + 61_000))).toBeNull();
+  });
+
+  it("compares secrets after hashing them to a fixed length", async () => {
+    await expect(timingSafeEqual("same", "same")).resolves.toBe(true);
+    await expect(timingSafeEqual("same", "diff")).resolves.toBe(false);
+    await expect(timingSafeEqual("short", "much-longer")).resolves.toBe(false);
   });
 });
 

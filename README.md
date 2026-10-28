@@ -10,7 +10,7 @@ GitHub Issues #1–#11 contain the approved product, UX, technical design, feasi
 
 - Cloudflare Worker application and API
 - D1 storage for metadata, chunked immutable assets, and daily aggregate analytics
-- Cloudflare Access for the single owner and authenticated MCP client
+- Worker-native owner sessions and an independent MCP Bearer token
 - Separate application and content origins for untrusted HTML isolation
 - Two-screen owner workspace for upload, versioning, sharing, and aggregate review
 - Meaningful-view and visible-time aggregates without reader identities

@@ -1,14 +1,16 @@
 # Codex MCP publishing
 
-Preview exposes a stateless Streamable HTTP endpoint at `https://preview.carlocaprini.com/mcp`. Cloudflare Access service-token headers authenticate the client. Keep both values in environment variables; never put them in `config.toml`, prompts, logs, or repository files.
+Preview exposes a stateless Streamable HTTP endpoint at `https://preview.carlocaprini.com/mcp`. One dedicated Bearer token authenticates both the MCP endpoint and its upload-transfer URLs. Keep the token in an environment variable; never put it in `config.toml`, prompts, logs, or repository files.
 
 Example Codex configuration:
 
 ```toml
 [mcp_servers.preview]
 url = "https://preview.carlocaprini.com/mcp"
-env_http_headers = { "CF-Access-Client-Id" = "CF_ACCESS_CLIENT_ID", "CF-Access-Client-Secret" = "CF_ACCESS_CLIENT_SECRET" }
+env_http_headers = { "Authorization" = "PREVIEW_MCP_AUTHORIZATION" }
 ```
+
+Set `PREVIEW_MCP_AUTHORIZATION` to `Bearer ` followed by the token. The local sideband helper reads the same raw token from `PREVIEW_MCP_TOKEN`.
 
 The MCP surface has exactly three business operations:
 

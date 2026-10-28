@@ -8,8 +8,8 @@ export default defineConfig(({ mode }) => ({
     compatibilityFlags: ["nodejs_compat"],
     env: {
       DB: bindings.d1({ name: mode === "staging" ? "preview-site-staging" : "preview-site" }),
-      OWNER_EMAIL: bindings.secret(),
-      MCP_ACCESS_CLIENT_ID: bindings.secret(),
+      OWNER_PASSWORD: bindings.secret(),
+      MCP_BEARER_TOKEN: bindings.secret(),
       SHARE_SIGNING_KEY: bindings.secret(),
       APP_ORIGIN: bindings.text(
         mode === "staging"

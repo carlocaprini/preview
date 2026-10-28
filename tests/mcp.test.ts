@@ -10,8 +10,8 @@ describe("stateless MCP contract", () => {
       CONTENT_ORIGIN: "https://content.preview.example.com",
       ENVIRONMENT: "test",
       SHARE_SIGNING_KEY: "mcp-test-key-that-is-at-least-thirty-two-bytes",
-      OWNER_EMAIL: "owner@example.com",
-      MCP_ACCESS_CLIENT_ID: "mcp-client",
+      OWNER_PASSWORD: "test-owner-password-with-enough-entropy",
+      MCP_BEARER_TOKEN: "test-mcp-bearer-token-with-enough-entropy",
       DB: {} as D1Database,
     } satisfies PreviewEnv;
     const ctx = { waitUntil() {}, passThroughOnException() {}, props: {} } as unknown as PreviewExecutionContext;

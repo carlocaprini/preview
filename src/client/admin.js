@@ -28,10 +28,19 @@ function formatDate(value) {
 
 async function api(path, options) {
   const response = await fetch(path, options);
+  if (response.status === 401) {
+    location.replace(`/login?next=${encodeURIComponent(`${location.pathname}${location.search}`)}`);
+    throw new Error("Session expired");
+  }
   const body = response.status === 204 ? null : await response.json().catch(() => null);
   if (!response.ok) throw new Error(body?.error?.message || `Request failed (${response.status})`);
   return body;
 }
+
+document.querySelector("[data-action=logout]")?.addEventListener("click", async () => {
+  await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+  location.replace("/login");
+});
 
 function flash(message, type = "success") {
   notice.textContent = message;

@@ -66,19 +66,15 @@ function describe(files, sourcePath) {
 }
 
 async function upload(sourcePath, planPath) {
-  const clientId = process.env.CF_ACCESS_CLIENT_ID;
-  const clientSecret = process.env.CF_ACCESS_CLIENT_SECRET;
-  if (!clientId || !clientSecret) throw new Error("CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET are required");
+  const token = process.env.PREVIEW_MCP_TOKEN;
+  if (!token) throw new Error("PREVIEW_MCP_TOKEN is required");
 
   const files = await loadPackage(sourcePath);
   const plan = JSON.parse(await readFile(planPath, "utf8"));
   const planned = new Map(plan.files.map((file) => [file.path, file]));
   if (planned.size !== files.size) throw new Error("Local package does not match the transfer plan");
 
-  const authHeaders = {
-    "CF-Access-Client-Id": clientId,
-    "CF-Access-Client-Secret": clientSecret,
-  };
+  const authHeaders = { Authorization: `Bearer ${token}` };
   for (const [path, bytes] of files) {
     const target = planned.get(path);
     if (!target || target.size !== bytes.byteLength || target.mediaType !== mediaType(path)) {

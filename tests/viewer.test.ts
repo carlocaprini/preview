@@ -6,6 +6,7 @@ import { D1PublishingRepository } from "../src/data/repository.ts";
 import { D1AssetStore } from "../src/data/assets.ts";
 import { handleRequest } from "../src/index.ts";
 import { PublishingService } from "../src/services/publishing.ts";
+import { createOwnerSession, OWNER_SESSION_COOKIE } from "../src/security/auth.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "../src/types.ts";
 
 class BoundStatement {
@@ -67,10 +68,16 @@ class SqliteD1 {
 }
 
 const anonymous = { waitUntil() {}, passThroughOnException() {}, props: {} } as unknown as PreviewExecutionContext;
-const owner = {
-  ...anonymous,
-  access: { getIdentity: async () => ({ email: "owner@example.com" }) },
-} as PreviewExecutionContext;
+
+async function ownerRequest(env: PreviewEnv, url: string, init: RequestInit = {}): Promise<Request> {
+  const token = await createOwnerSession(env);
+  const headers = new Headers(init.headers);
+  headers.set("cookie", `${OWNER_SESSION_COOKIE}=${token}`);
+  if (!["GET", "HEAD", "OPTIONS"].includes((init.method ?? "GET").toUpperCase())) {
+    headers.set("origin", env.APP_ORIGIN);
+  }
+  return new Request(url, { ...init, headers });
+}
 
 function bytes(value: string): Uint8Array {
   return new TextEncoder().encode(value);
@@ -99,8 +106,8 @@ describe("public and owner viewing", () => {
     database = new SqliteD1();
     env = {
       DB: database as unknown as D1Database,
-      OWNER_EMAIL: "owner@example.com",
-      MCP_ACCESS_CLIENT_ID: "mcp-client",
+      OWNER_PASSWORD: "test-owner-password-with-enough-entropy",
+      MCP_BEARER_TOKEN: "test-mcp-bearer-token-with-enough-entropy",
       SHARE_SIGNING_KEY: "viewer-test-signing-key-at-least-thirty-two-bytes",
       APP_ORIGIN: "https://app.test",
       CONTENT_ORIGIN: "https://content.test",
@@ -181,9 +188,9 @@ describe("public and owner viewing", () => {
     const linkId = database.raw.prepare("SELECT id FROM share_link").get() as { id: string };
 
     const revoked = await handleRequest(
-      new Request(`https://app.test/api/admin/links/${linkId.id}/revoke`, { method: "POST" }),
+      await ownerRequest(env, `https://app.test/api/admin/links/${linkId.id}/revoke`, { method: "POST" }),
       env,
-      owner,
+      anonymous,
     );
     expect(revoked.status).toBe(200);
     expect((await handleRequest(new Request(link.url), env, anonymous)).status).toBe(410);
@@ -195,13 +202,13 @@ describe("public and owner viewing", () => {
     const link = await publishing.createShareLink({ contentId: plan.contentId, label: "Temporary", validForSeconds: null });
     const linkId = database.raw.prepare("SELECT id FROM share_link").get() as { id: string };
     const edited = await handleRequest(
-      new Request(`https://app.test/api/admin/links/${linkId.id}`, {
+      await ownerRequest(env, `https://app.test/api/admin/links/${linkId.id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ expiresAt: "2000-01-01T00:00:00.000Z" }),
       }),
       env,
-      owner,
+      anonymous,
     );
     expect(edited.status).toBe(200);
     expect((await handleRequest(new Request(link.url), env, anonymous)).status).toBe(410);
@@ -211,14 +218,16 @@ describe("public and owner viewing", () => {
   it("supports owner preview before sharing and refuses anonymous content-origin preview", async () => {
     const plan = await publish("Owner only", "<h1>Unshared</h1>");
     const shell = await handleRequest(
-      new Request(`https://app.test/api/admin/contents/${plan.contentId}/preview`),
+      await ownerRequest(env, `https://app.test/api/admin/contents/${plan.contentId}/preview`),
       env,
-      owner,
+      anonymous,
     );
     const source = iframeSource(await shell.text());
     expect(shell.status).toBe(200);
-    expect((await handleRequest(new Request(source), env, anonymous)).status).toBe(403);
-    expect(await (await handleRequest(new Request(source), env, owner)).text()).toBe("<h1>Unshared</h1>");
+    expect(await (await handleRequest(new Request(source), env, anonymous)).text()).toBe("<h1>Unshared</h1>");
+    const tampered = new URL(source);
+    tampered.pathname = tampered.pathname.replace("/preview/", "/preview/x");
+    expect((await handleRequest(new Request(tampered), env, anonymous)).status).toBe(404);
   });
 
   it("uses one branded unavailable response for missing and malformed links", async () => {
@@ -263,19 +272,23 @@ describe("public and owner viewing", () => {
   it("returns an owner-only two-screen workspace with reconstructed stable links", async () => {
     const plan = await publish("Admin item", "<h1>Admin</h1>");
     const link = await publishing.createShareLink({ contentId: plan.contentId, label: "Client", validForSeconds: null });
-    const library = await handleRequest(new Request("https://app.test/api/admin/contents"), env, owner);
+    const library = await handleRequest(await ownerRequest(env, "https://app.test/api/admin/contents"), env, anonymous);
     expect(library.status).toBe(200);
     expect(await library.json()).toMatchObject({
       contents: [{ id: plan.contentId, title: "Admin item", activeVersion: 1, activeLinkCount: 1 }],
     });
 
-    const detail = await handleRequest(new Request(`https://app.test/api/admin/contents/${plan.contentId}`), env, owner);
+    const detail = await handleRequest(
+      await ownerRequest(env, `https://app.test/api/admin/contents/${plan.contentId}`),
+      env,
+      anonymous,
+    );
     expect(detail.status).toBe(200);
     expect(await detail.json()).toMatchObject({
       id: plan.contentId,
       versions: [{ sequence: 1, status: "ready" }],
       links: [{ label: "Client", url: link.url, state: "active" }],
     });
-    expect((await handleRequest(new Request("https://app.test/api/admin/contents"), env, anonymous)).status).toBe(403);
+    expect((await handleRequest(new Request("https://app.test/api/admin/contents"), env, anonymous)).status).toBe(401);
   });
 });
