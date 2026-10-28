@@ -38,6 +38,8 @@ export function contentHeaders(env: PreviewEnv, mediaType: string): Headers {
       "object-src 'none'",
       `frame-ancestors ${env.APP_ORIGIN}`,
       "form-action 'none'",
+      "style-src 'self' 'unsafe-inline' https: data: blob:",
+      "script-src 'self' 'unsafe-inline' https: data: blob:",
     ].join("; "),
   });
 }

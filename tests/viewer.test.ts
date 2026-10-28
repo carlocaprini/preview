@@ -153,6 +153,12 @@ describe("public and owner viewing", () => {
     expect(content.status).toBe(200);
     expect(await content.text()).toBe("<h1>First</h1>");
     expect(content.headers.get("content-security-policy")).toContain(`frame-ancestors ${env.APP_ORIGIN}`);
+    expect(content.headers.get("content-security-policy")).toContain(
+      "style-src 'self' 'unsafe-inline' https: data: blob:",
+    );
+    expect(content.headers.get("content-security-policy")).toContain(
+      "script-src 'self' 'unsafe-inline' https: data: blob:",
+    );
     expect(content.headers.get("referrer-policy")).toBe("no-referrer");
 
     const tampered = new URL(iframeSource(page));
