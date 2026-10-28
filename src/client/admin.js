@@ -1,0 +1,191 @@
+const root = document.querySelector("#admin-app");
+const dialog = document.querySelector("#admin-dialog");
+const notice = document.querySelector("#notice");
+const contentId = location.pathname.match(/^\/admin\/contents\/([^/]+)$/)?.[1];
+const LIMIT_BYTES = 20 * 1024 * 1024;
+const LIMIT_FILES = 50;
+
+function escapeHtml(value) {
+  return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatDuration(milliseconds) {
+  if (!milliseconds) return "—";
+  const seconds = Math.round(milliseconds / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+function formatDate(value) {
+  return value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "—";
+}
+
+async function api(path, options) {
+  const response = await fetch(path, options);
+  if (response.status === 401) {
+    location.replace(`/login?next=${encodeURIComponent(`${location.pathname}${location.search}`)}`);
+    throw new Error("Session expired");
+  }
+  const body = response.status === 204 ? null : await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.error?.message || `Request failed (${response.status})`);
+  return body;
+}
+
+document.querySelector("[data-action=logout]")?.addEventListener("click", async () => {
+  await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+  location.replace("/login");
+});
+
+function flash(message, type = "success") {
+  notice.textContent = message;
+  notice.dataset.type = type;
+  notice.hidden = false;
+  clearTimeout(flash.timer);
+  flash.timer = setTimeout(() => { notice.hidden = true; }, 5_000);
+}
+
+function openDialog(title, body, submitLabel, handler) {
+  dialog.innerHTML = `<form method="dialog" class="dialog-card"><header><div><span class="eyebrow">Preview</span><h2>${escapeHtml(title)}</h2></div><button class="icon-button" value="cancel" aria-label="Close">×</button></header>${body}<footer><button class="button secondary" value="cancel">Cancel</button><button class="button" value="submit">${escapeHtml(submitLabel)}</button></footer></form>`;
+  const form = dialog.querySelector("form");
+  form.addEventListener("submit", async (event) => {
+    const submitter = event.submitter;
+    if (submitter?.value !== "submit") return;
+    event.preventDefault();
+    submitter.disabled = true;
+    submitter.textContent = "Working…";
+    try {
+      await handler(new FormData(form));
+      dialog.close();
+    } catch (error) {
+      flash(error instanceof Error ? error.message : "Something went wrong", "error");
+      submitter.disabled = false;
+      submitter.textContent = submitLabel;
+    }
+  });
+  dialog.showModal();
+}
+
+function normalizeZip(entries) {
+  const names = Object.keys(entries).filter((name) => !name.endsWith("/") && !name.startsWith("__MACOSX/"));
+  if (!names.includes("index.html")) {
+    const roots = new Set(names.map((name) => name.split("/")[0]));
+    if (roots.size === 1 && names.every((name) => name.includes("/"))) {
+      const prefix = `${[...roots][0]}/`;
+      return Object.fromEntries(names.map((name) => [name.slice(prefix.length), entries[name]]));
+    }
+  }
+  return Object.fromEntries(names.map((name) => [name, entries[name]]));
+}
+
+async function packageFile(file) {
+  if (!file) throw new Error("Choose an HTML or ZIP file.");
+  if (file.size > LIMIT_BYTES) throw new Error("The selected file exceeds 20 MiB.");
+  if (file.name.toLowerCase().endsWith(".html")) {
+    return { sourceFormat: "html", files: [{ path: "index.html", data: new Uint8Array(await file.arrayBuffer()) }] };
+  }
+  if (!file.name.toLowerCase().endsWith(".zip")) throw new Error("Only .html and .zip files are supported.");
+  let count = 0;
+  let total = 0;
+  const archive = window.fflate.unzipSync(new Uint8Array(await file.arrayBuffer()), {
+    filter(entry) {
+      if (entry.name.endsWith("/") || entry.name.startsWith("__MACOSX/")) return false;
+      count += 1;
+      total += entry.originalSize;
+      if (count > LIMIT_FILES || total > LIMIT_BYTES) throw new Error("ZIP exceeds the 50-file or 20 MiB limit.");
+      return true;
+    },
+  });
+  const normalized = normalizeZip(archive);
+  if (!normalized["index.html"]) throw new Error("ZIP must contain index.html at its root.");
+  return { sourceFormat: "zip", files: Object.entries(normalized).map(([path, data]) => ({ path, data })) };
+}
+
+async function transfer(title, file, existingContentId) {
+  const bundle = await packageFile(file);
+  const manifest = bundle.files.map(({ path, data }) => ({ path, size: data.byteLength }));
+  const endpoint = existingContentId ? `/api/admin/contents/${existingContentId}/versions` : "/api/admin/contents";
+  const payload = existingContentId
+    ? { sourceFormat: bundle.sourceFormat, files: manifest }
+    : { title, sourceFormat: bundle.sourceFormat, files: manifest };
+  const plan = await api(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+  for (const item of plan.files) {
+    const fileData = bundle.files.find((candidate) => candidate.path === item.path)?.data;
+    await api(item.uploadUrl, { method: "PUT", headers: { "content-type": item.mediaType }, body: fileData });
+  }
+  await api(plan.commitUrl, { method: "POST" });
+  return plan.contentId;
+}
+
+function uploadDialog(existingContentId) {
+  openDialog(
+    existingContentId ? "Upload a new version" : "Add interactive content",
+    `${existingContentId ? "" : '<label>Title<input name="title" required maxlength="160" placeholder="A clear internal title"></label>'}<label>HTML or ZIP package<input name="file" type="file" accept=".html,.zip,text/html,application/zip" required><small>Root index.html · up to 50 files · 20 MiB total</small></label><div class="progress-note">The new version becomes active only after every asset is verified.</div>`,
+    "Upload and activate",
+    async (data) => {
+      const id = await transfer(String(data.get("title") || ""), data.get("file"), existingContentId);
+      location.assign(`/admin/contents/${id}`);
+    },
+  );
+}
+
+function linkDialog() {
+  openDialog(
+    "Create a share link",
+    '<label>Internal label<input name="label" required maxlength="120" placeholder="Client review"></label><label>Expiry<select name="expiry"><option value="604800">7 days</option><option value="2592000">30 days</option><option value="">No expiry</option></select></label>',
+    "Create link",
+    async (data) => {
+      const raw = String(data.get("expiry"));
+      const result = await api(`/api/admin/contents/${contentId}/links`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ label: data.get("label"), validForSeconds: raw ? Number(raw) : null }) });
+      await navigator.clipboard.writeText(result.url).catch(() => {});
+      flash("Share link created and copied.");
+      await renderDetail();
+    },
+  );
+}
+
+async function renderLibrary() {
+  const { contents } = await api("/api/admin/contents");
+  root.innerHTML = `<section class="admin-head"><div><span class="eyebrow">Owner workspace</span><h1>Library</h1><p>Private interactive work, ready when you choose to share it.</p></div><button class="button" data-action="upload">Add content</button></section>${contents.length ? `<div class="library-grid">${contents.map((item) => `<a class="content-card" href="/admin/contents/${encodeURIComponent(item.id)}"><div class="card-top"><span class="format">${escapeHtml(item.sourceFormat || "draft")}</span><span>${item.activeLinkCount} active link${item.activeLinkCount === 1 ? "" : "s"}</span></div><h2>${escapeHtml(item.title)}</h2><dl><div><dt>Version</dt><dd>${item.activeVersion || "—"}</dd></div><div><dt>Views</dt><dd>${item.meaningfulViews}</dd></div><div><dt>Visible time</dt><dd>${formatDuration(item.activeVisibleMs)}</dd></div></dl><small>Updated ${formatDate(item.updatedAt)}</small></a>`).join("")}</div>` : '<section class="empty"><span class="empty-mark">◇</span><h2>Your private library is empty</h2><p>Upload one HTML file or a ZIP package. Nothing becomes public until you create a share link.</p><button class="button" data-action="upload">Add your first item</button></section>'}`;
+}
+
+async function renderDetail() {
+  const item = await api(`/api/admin/contents/${contentId}`);
+  const active = item.versions.find((version) => version.id === item.activeVersionId);
+  root.innerHTML = `<a class="back" href="/admin">← Library</a><section class="detail-head"><div><span class="eyebrow">Interactive content</span><h1>${escapeHtml(item.title)}</h1><p>Active version ${active?.sequence || "—"} · Updated ${formatDate(item.updatedAt)}</p></div><div class="actions"><a class="button secondary" href="/api/admin/contents/${item.id}/preview" target="_blank">Open preview</a><button class="button secondary" data-action="version">New version</button><button class="button" data-action="link">Create link</button></div></section><section class="metric-row"><article><span>Meaningful views</span><strong>${item.links.reduce((sum, link) => sum + link.meaningfulViews, 0)}</strong></article><article><span>Active visible time</span><strong>${formatDuration(item.links.reduce((sum, link) => sum + link.activeVisibleMs, 0))}</strong></article><article><span>Active links</span><strong>${item.links.filter((link) => link.state === "active").length}</strong></article></section><div class="detail-grid"><section class="panel"><header><div><span class="eyebrow">Sharing</span><h2>Share links</h2></div></header>${item.links.length ? `<div class="link-list">${item.links.map((link) => `<article class="link-row"><div><div class="link-title"><strong>${escapeHtml(link.label)}</strong><span class="status ${link.state}">${link.state}</span></div><small>${link.meaningfulViews} views · ${formatDuration(link.activeVisibleMs)} visible · Expires ${formatDate(link.expiresAt)}</small></div><div class="row-actions"><button class="text-button" data-action="copy" data-url="${escapeHtml(link.url)}">Copy</button>${link.state !== "revoked" ? `<button class="text-button" data-action="expiry" data-id="${link.id}" data-expiry="${escapeHtml(link.expiresAt || "")}">Expiry</button><button class="text-button danger" data-action="revoke" data-id="${link.id}">Revoke</button>` : ""}</div></article>`).join("")}</div>` : '<div class="panel-empty">No links yet. This content is private.</div>'}</section><section class="panel"><header><div><span class="eyebrow">History</span><h2>Versions</h2></div></header><div class="version-list">${item.versions.map((version) => `<article><div><strong>Version ${version.sequence}</strong><span>${escapeHtml(version.sourceFormat.toUpperCase())} · ${formatBytes(version.totalBytes)}</span></div><span class="status ${version.id === item.activeVersionId ? "active" : version.status}">${version.id === item.activeVersionId ? "active" : version.status}</span></article>`).join("")}</div></section></div>`;
+}
+
+root.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-action]");
+  if (!button) return;
+  const action = button.dataset.action;
+  if (action === "upload") uploadDialog();
+  if (action === "version") uploadDialog(contentId);
+  if (action === "link") linkDialog();
+  if (action === "copy") {
+    await navigator.clipboard.writeText(button.dataset.url);
+    flash("Link copied.");
+  }
+  if (action === "expiry") {
+    openDialog("Edit link expiry", `<label>Expiry date and time<input name="expiry" type="datetime-local" value="${button.dataset.expiry ? new Date(button.dataset.expiry).toISOString().slice(0, 16) : ""}"><small>Leave empty for no expiry.</small></label>`, "Save expiry", async (data) => {
+      const value = String(data.get("expiry"));
+      await api(`/api/admin/links/${button.dataset.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ expiresAt: value ? new Date(value).toISOString() : null }) });
+      flash("Expiry updated.");
+      await renderDetail();
+    });
+  }
+  if (action === "revoke" && confirm("Revoke this link now? Anyone using it will immediately lose access.")) {
+    await api(`/api/admin/links/${button.dataset.id}/revoke`, { method: "POST" });
+    flash("Link revoked.");
+    await renderDetail();
+  }
+});
+
+(contentId ? renderDetail() : renderLibrary()).catch((error) => {
+  root.innerHTML = `<section class="empty"><h2>Could not load the workspace</h2><p>${escapeHtml(error instanceof Error ? error.message : "Unknown error")}</p></section>`;
+});
