@@ -4,6 +4,7 @@ import { D1AnalyticsRepository, type MeasurementKind } from "../data/analytics.t
 import { D1ViewerRepository } from "../data/viewer.ts";
 import { D1AssetStore } from "../data/assets.ts";
 import { ViewerService } from "../services/viewer.ts";
+import { authenticateOwner } from "../security/auth.ts";
 import type { PreviewEnv } from "../types.ts";
 
 interface MeasurementBody {
@@ -28,6 +29,8 @@ export async function routeAnalyticsApi(request: Request, env: PreviewEnv): Prom
     const viewer = new ViewerService(new D1ViewerRepository(env.DB), new D1AssetStore(env.DB), env.SHARE_SIGNING_KEY);
     const asset = await viewer.resolveSharedAsset(body.token, body.snapshotId, "index.html");
     if (!asset?.linkId) return apiError("link_unavailable", "Preview unavailable", 404);
+    const owner = await authenticateOwner(request, env);
+    if (owner.authorized) return json({ recorded: false });
     const recorded = await new D1AnalyticsRepository(env.DB).record({
       receiptId: body.receiptId,
       linkId: asset.linkId,

@@ -275,6 +275,88 @@ describe("public and owner viewing", () => {
     expect(database.raw.prepare("SELECT COUNT(*) AS count FROM measurement_receipt").get()).toEqual({ count: 2 });
   });
 
+  it("excludes each authenticated owner measurement without changing public link behavior or analytics", async () => {
+    const plan = await publish("Owner measured", "<h1>Owner measured</h1>");
+    const link = await publishing.createShareLink({ contentId: plan.contentId, label: "Owner check", validForSeconds: null });
+    const ownerToken = await createOwnerSession(env);
+    const ownerCookie = `${OWNER_SESSION_COOKIE}=${ownerToken}`;
+    const shell = await handleRequest(new Request(link.url, { headers: { cookie: ownerCookie } }), env, anonymous);
+    const snapshotId = new URL(iframeSource(await shell.text())).pathname.split("/")[4];
+    const token = new URL(link.url).pathname.slice(3);
+    expect(shell.status).toBe(200);
+    expect(snapshotId).toBeTruthy();
+
+    const measure = (receiptId: string, kind: "view" | "visible", cookie?: string, visibleMs = 0) => {
+      const headers = new Headers({ "content-type": "application/json" });
+      if (cookie) headers.set("cookie", cookie);
+      return handleRequest(
+        new Request("https://app.test/api/public/measure", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ token, snapshotId, receiptId, kind, visibleMs }),
+        }),
+        env,
+        anonymous,
+      );
+    };
+
+    expect(await (await measure("owner-view-000000000001", "view", ownerCookie)).json()).toEqual({ recorded: false });
+    expect(await (await measure("owner-visible-00000001", "visible", ownerCookie, 5_000)).json()).toEqual({ recorded: false });
+    expect(database.raw.prepare("SELECT COUNT(*) AS count FROM measurement_receipt").get()).toEqual({ count: 0 });
+    expect(database.raw.prepare("SELECT COUNT(*) AS count FROM daily_aggregate").get()).toEqual({ count: 0 });
+
+    expect(await (await measure("logged-out-view-0000001", "view")).json()).toEqual({ recorded: true });
+    const afterLogout = database.raw
+      .prepare("SELECT meaningful_views,active_visible_ms,last_view_at FROM daily_aggregate")
+      .get() as { meaningful_views: number; active_visible_ms: number; last_view_at: string };
+    expect(afterLogout.meaningful_views).toBe(1);
+    expect(afterLogout.active_visible_ms).toBe(0);
+    expect(afterLogout.last_view_at).toBeTruthy();
+
+    expect(await (await measure("owner-view-000000000002", "view", ownerCookie)).json()).toEqual({ recorded: false });
+    expect(await (await measure("owner-visible-00000002", "visible", ownerCookie, 7_000)).json()).toEqual({ recorded: false });
+    expect(database.raw.prepare("SELECT meaningful_views,active_visible_ms,last_view_at FROM daily_aggregate").get()).toEqual(
+      afterLogout,
+    );
+    expect(database.raw.prepare("SELECT COUNT(*) AS count FROM measurement_receipt").get()).toEqual({ count: 1 });
+  });
+
+  it("counts forged and expired owner sessions and ignores client-provided owner claims", async () => {
+    const plan = await publish("Claimed owner", "<h1>Claimed owner</h1>");
+    const link = await publishing.createShareLink({ contentId: plan.contentId, label: "Claims", validForSeconds: null });
+    const shell = await handleRequest(new Request(link.url), env, anonymous);
+    const snapshotId = new URL(iframeSource(await shell.text())).pathname.split("/")[4];
+    const token = new URL(link.url).pathname.slice(3);
+    const validToken = await createOwnerSession(env);
+    const expiredToken = await createOwnerSession(env, new Date(Date.now() - 60_000), 1);
+
+    const measure = (receiptId: string, cookie: string, kind: "view" | "visible" = "view", visibleMs = 0) =>
+      handleRequest(
+        new Request("https://app.test/api/public/measure", {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie },
+          body: JSON.stringify({ token, snapshotId, receiptId, kind, visibleMs, owner: true, isAdmin: true }),
+        }),
+        env,
+        anonymous,
+      );
+
+    expect(await (await measure("forged-owner-000000001", `${OWNER_SESSION_COOKIE}=${validToken}x`)).json()).toEqual({
+      recorded: true,
+    });
+    expect(await (await measure("expired-owner-00000001", `${OWNER_SESSION_COOKIE}=${expiredToken}`)).json()).toEqual({
+      recorded: true,
+    });
+    expect(await (await measure("claimed-owner-00000001", "unrelated=value", "visible", 3_000)).json()).toEqual({
+      recorded: true,
+    });
+    expect(database.raw.prepare("SELECT meaningful_views,active_visible_ms FROM daily_aggregate").get()).toEqual({
+      meaningful_views: 2,
+      active_visible_ms: 3_000,
+    });
+    expect(database.raw.prepare("SELECT COUNT(*) AS count FROM measurement_receipt").get()).toEqual({ count: 3 });
+  });
+
   it("returns an owner-only two-screen workspace with reconstructed stable links", async () => {
     const plan = await publish("Admin item", "<h1>Admin</h1>");
     const link = await publishing.createShareLink({ contentId: plan.contentId, label: "Client", validForSeconds: null });
