@@ -21,10 +21,11 @@ const detail = {
     { id: "version-3", sequence: 3, status: "ready", sourceFormat: "zip", totalBytes: 481_234, createdAt: content.updatedAt, activatedAt: content.updatedAt },
   ],
   links: [
-    { id: "link-1", label: "Client review", url: "https://preview.example/s/token", createdAt: content.updatedAt, expiresAt: "2026-11-02T18:00:00.000Z", revokedAt: null, state: "active", meaningfulViews: 14, activeVisibleMs: 196_000, lastViewAt: content.updatedAt },
-    { id: "link-2", label: "Old review", url: "https://preview.example/s/old", createdAt: content.updatedAt, expiresAt: null, revokedAt: content.updatedAt, state: "revoked", meaningfulViews: 0, activeVisibleMs: 0, lastViewAt: null },
+    { id: "link-1", label: "Client review", url: "https://preview.example/s/token", createdAt: content.updatedAt, expiresAt: "2026-11-02T18:00:00.000Z", revokedAt: null, state: "active", meaningfulViews: 14, activeVisibleMs: 196_000, lastViewAt: content.updatedAt, pdfDownloadsServed: 0, lastPdfDownloadAt: null },
+    { id: "link-2", label: "Old review", url: "https://preview.example/s/old", createdAt: content.updatedAt, expiresAt: null, revokedAt: content.updatedAt, state: "revoked", meaningfulViews: 0, activeVisibleMs: 0, lastViewAt: null, pdfDownloadsServed: 0, lastPdfDownloadAt: null },
   ],
   aggregates: [],
+  pdfCompanion: { state: "none" },
 };
 
 async function mockAdmin(page: Page) {
@@ -53,7 +54,37 @@ test("content detail exposes only the current update and reversible share contro
   await expect(page.getByRole("button", { name: "Update HTML" })).toBeVisible();
   await expect(page.getByText("Versions", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Revoke" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Upload PDF" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("content-detail.png"), fullPage: true });
+});
+
+test("PDF companion upload stages bytes and commits before becoming current", async ({ page }) => {
+  const requests: string[] = [];
+  await mockAdmin(page);
+  await page.route("**/api/admin/contents/content-1/pdf/uploads", async (route) => {
+    requests.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
+    expect(route.request().postDataJSON()).toMatchObject({ fileName: "brief.pdf", expectedActiveVersionId: "version-3" });
+    return route.fulfill({ status: 201, json: { uploadUrl: "/api/admin/pdf/uploads/pdf-upload/data", commitUrl: "/api/admin/pdf/uploads/pdf-upload/commit" } });
+  });
+  await page.route("**/api/admin/pdf/uploads/**", (route) => {
+    requests.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
+    return route.fulfill({ status: route.request().method() === "PUT" ? 204 : 200, json: route.request().method() === "PUT" ? undefined : { pdfCompanion: { state: "current" } } });
+  });
+
+  await page.goto("/admin/contents/content-1");
+  await page.getByRole("button", { name: "Upload PDF" }).click();
+  await page.getByLabel("PDF file").setInputFiles({
+    name: "brief.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.7\nbrief"),
+  });
+  await page.getByRole("button", { name: "Upload PDF", exact: true }).last().click();
+  await expect(page.getByText("PDF companion uploaded.")).toBeVisible();
+  expect(requests).toEqual([
+    "POST /api/admin/contents/content-1/pdf/uploads",
+    "PUT /api/admin/pdf/uploads/pdf-upload/data",
+    "POST /api/admin/pdf/uploads/pdf-upload/commit",
+  ]);
 });
 
 test("single HTML upload stages bytes and commits before navigation", async ({ page }) => {

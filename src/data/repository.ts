@@ -234,7 +234,7 @@ export class D1PublishingRepository implements PublishingRepository {
         .bind(timestamp, upload.versionId, upload.contentId),
       this.db
         .prepare(
-          `UPDATE content SET active_version_id = ?,updated_at = ?
+          `UPDATE content SET active_version_id = ?,pdf_approved_html_version_id = NULL,updated_at = ?
             WHERE id = ?
               AND ((active_version_id IS NULL AND ? IS NULL) OR active_version_id = ?)
               AND changes() = 1

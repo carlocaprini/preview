@@ -4,6 +4,7 @@ const notice = document.querySelector("#notice");
 const contentId = location.pathname.match(/^\/admin\/contents\/([^/]+)$/)?.[1];
 const LIMIT_BYTES = 20 * 1024 * 1024;
 const LIMIT_FILES = 50;
+const PDF_LIMIT_BYTES = 10 * 1024 * 1024;
 
 function escapeHtml(value) {
   return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -143,6 +144,38 @@ function linkDialog() {
   );
 }
 
+function pdfUploadDialog(item) {
+  const replacing = (item.pdfCompanion?.state || "none") !== "none";
+  openDialog(
+    replacing ? "Replace PDF companion" : "Upload PDF companion",
+    '<label>PDF file<input name="file" type="file" accept=".pdf,application/pdf" required><small>PDF only · up to 10 MiB. The existing approved PDF remains available until replacement succeeds.</small></label>',
+    replacing ? "Upload replacement" : "Upload PDF",
+    async (data) => {
+      const file = data.get("file");
+      if (!(file instanceof File) || !file.name.toLowerCase().endsWith(".pdf")) throw new Error("Choose a PDF file.");
+      if (file.size <= 0 || file.size > PDF_LIMIT_BYTES) throw new Error("PDF must be between 1 byte and 10 MiB.");
+      const plan = await api(`/api/admin/contents/${contentId}/pdf/uploads`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ fileName: file.name, size: file.size, expectedActiveVersionId: item.activeVersionId }),
+      });
+      await api(plan.uploadUrl, { method: "PUT", headers: { "content-type": "application/pdf" }, body: file });
+      await api(plan.commitUrl, { method: "POST" });
+      flash(replacing ? "PDF companion replaced." : "PDF companion uploaded.");
+      await renderDetail();
+    },
+  );
+}
+
+function pdfPanel(item) {
+  const pdf = item.pdfCompanion || { state: "none" };
+  if (pdf.state === "none") {
+    return '<section class="panel"><header><div><span class="eyebrow">Companion</span><h2>PDF</h2></div></header><div class="panel-empty"><p>No PDF companion</p><button class="button secondary" data-action="pdf-upload">Upload PDF</button></div></section>';
+  }
+  const outdated = pdf.state === "outdated";
+  return `<section class="panel"><header><div><span class="eyebrow">Companion</span><h2>PDF</h2></div></header><div class="panel-empty"><strong>${escapeHtml(pdf.fileName)}</strong><p>${formatBytes(pdf.size)} · Uploaded ${formatDate(pdf.uploadedAt)}</p>${outdated ? '<p class="progress-note">PDF needs confirmation for this HTML version. It is hidden from shared links until confirmed or replaced.</p>' : '<p>Available from every active share link.</p>'}<div class="actions">${outdated ? `<button class="button" data-action="pdf-confirm" data-pdf-id="${escapeHtml(pdf.id)}" data-version-id="${escapeHtml(item.activeVersionId)}">Confirm reuse</button>` : ""}<button class="button secondary" data-action="pdf-upload">${outdated ? "Upload replacement" : "Replace PDF"}</button><button class="text-button danger" data-action="pdf-remove">Remove PDF</button></div></div></section>`;
+}
+
 async function renderLibrary() {
   const { contents } = await api("/api/admin/contents");
   root.innerHTML = `<section class="admin-head"><div><span class="eyebrow">Owner workspace</span><h1>Library</h1><p>Private interactive work, ready when you choose to share it.</p></div><button class="button" data-action="upload">Add content</button></section>${contents.length ? `<div class="library-grid">${contents.map((item) => `<a class="content-card" href="/admin/contents/${encodeURIComponent(item.id)}"><div class="card-top"><span class="format">${escapeHtml(item.sourceFormat || "draft")}</span><span>${item.activeLinkCount} active link${item.activeLinkCount === 1 ? "" : "s"}</span></div><h2>${escapeHtml(item.title)}</h2><dl><div><dt>Views</dt><dd>${item.meaningfulViews}</dd></div><div><dt>Visible time</dt><dd>${formatDuration(item.activeVisibleMs)}</dd></div></dl><small>Updated ${formatDate(item.updatedAt)}</small></a>`).join("")}</div>` : '<section class="empty"><span class="empty-mark">◇</span><h2>Your private library is empty</h2><p>Upload one HTML file or a ZIP package. Nothing becomes public until you create a share link.</p><button class="button" data-action="upload">Add your first item</button></section>'}`;
@@ -150,7 +183,7 @@ async function renderLibrary() {
 
 async function renderDetail() {
   const item = await api(`/api/admin/contents/${contentId}`);
-  root.innerHTML = `<a class="back" href="/admin">← Library</a><section class="detail-head"><div><span class="eyebrow">Interactive content</span><h1>${escapeHtml(item.title)}</h1><p>Updated ${formatDate(item.updatedAt)}</p></div><div class="actions"><a class="button secondary" href="/api/admin/contents/${item.id}/preview" target="_blank">Open preview</a><button class="button secondary" data-action="version">Update HTML</button><button class="button" data-action="link">Create link</button></div></section><section class="metric-row"><article><span>Meaningful views</span><strong>${item.links.reduce((sum, link) => sum + link.meaningfulViews, 0)}</strong></article><article><span>Active visible time</span><strong>${formatDuration(item.links.reduce((sum, link) => sum + link.activeVisibleMs, 0))}</strong></article><article><span>Active links</span><strong>${item.links.filter((link) => link.state === "active").length}</strong></article></section><div class="detail-grid"><section class="panel"><header><div><span class="eyebrow">Sharing</span><h2>Share links</h2></div></header>${item.links.length ? `<div class="link-list">${item.links.map((link) => `<article class="link-row"><div><div class="link-title"><strong>${escapeHtml(link.label)}</strong><span class="status ${link.state}">${link.state}</span></div><small>${link.meaningfulViews} views · ${formatDuration(link.activeVisibleMs)} visible · Expires ${formatDate(link.expiresAt)}</small></div><div class="row-actions"><button class="text-button" data-action="copy" data-url="${escapeHtml(link.url)}">Copy</button>${link.state !== "revoked" ? `<button class="text-button" data-action="expiry" data-id="${link.id}" data-expiry="${escapeHtml(link.expiresAt || "")}">Expiry</button><button class="text-button danger" data-action="revoke" data-id="${link.id}">Revoke</button>` : ""}</div></article>`).join("")}</div>` : '<div class="panel-empty">No links yet. This content is private.</div>'}</section></div>`;
+  root.innerHTML = `<a class="back" href="/admin">← Library</a><section class="detail-head"><div><span class="eyebrow">Interactive content</span><h1>${escapeHtml(item.title)}</h1><p>Updated ${formatDate(item.updatedAt)}</p></div><div class="actions"><a class="button secondary" href="/api/admin/contents/${item.id}/preview" target="_blank">Open preview</a><button class="button secondary" data-action="version">Update HTML</button><button class="button" data-action="link">Create link</button></div></section><section class="metric-row"><article><span>Meaningful views</span><strong>${item.links.reduce((sum, link) => sum + link.meaningfulViews, 0)}</strong></article><article><span>Active visible time</span><strong>${formatDuration(item.links.reduce((sum, link) => sum + link.activeVisibleMs, 0))}</strong></article><article><span>PDF downloads served</span><strong>${item.links.reduce((sum, link) => sum + link.pdfDownloadsServed, 0)}</strong></article><article><span>Active links</span><strong>${item.links.filter((link) => link.state === "active").length}</strong></article></section><div class="detail-grid"><section class="panel"><header><div><span class="eyebrow">Sharing</span><h2>Share links</h2></div></header>${item.links.length ? `<div class="link-list">${item.links.map((link) => `<article class="link-row"><div><div class="link-title"><strong>${escapeHtml(link.label)}</strong><span class="status ${link.state}">${link.state}</span></div><small>${link.meaningfulViews} views · ${formatDuration(link.activeVisibleMs)} visible · ${link.pdfDownloadsServed} PDF downloads served · Expires ${formatDate(link.expiresAt)}</small></div><div class="row-actions"><button class="text-button" data-action="copy" data-url="${escapeHtml(link.url)}">Copy</button>${link.state !== "revoked" ? `<button class="text-button" data-action="expiry" data-id="${link.id}" data-expiry="${escapeHtml(link.expiresAt || "")}">Expiry</button><button class="text-button danger" data-action="revoke" data-id="${link.id}">Revoke</button>` : ""}</div></article>`).join("")}</div>` : '<div class="panel-empty">No links yet. This content is private.</div>'}</section>${pdfPanel(item)}</div>`;
 }
 
 root.addEventListener("click", async (event) => {
@@ -160,6 +193,20 @@ root.addEventListener("click", async (event) => {
   if (action === "upload") uploadDialog();
   if (action === "version") uploadDialog(contentId);
   if (action === "link") linkDialog();
+  if (action === "pdf-upload") {
+    const item = await api(`/api/admin/contents/${contentId}`);
+    pdfUploadDialog(item);
+  }
+  if (action === "pdf-confirm") {
+    await api(`/api/admin/contents/${contentId}/pdf/confirm`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pdfId: button.dataset.pdfId, expectedActiveVersionId: button.dataset.versionId }) });
+    flash("PDF companion confirmed for this HTML version.");
+    await renderDetail();
+  }
+  if (action === "pdf-remove" && confirm("Remove this PDF companion from every share link?")) {
+    await api(`/api/admin/contents/${contentId}/pdf`, { method: "DELETE" });
+    flash("PDF companion removed.");
+    await renderDetail();
+  }
   if (action === "copy") {
     await navigator.clipboard.writeText(button.dataset.url);
     flash("Link copied.");
