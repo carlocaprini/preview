@@ -4,6 +4,7 @@ import { routeOwnerViewerApi } from "./api/viewer.ts";
 import { routeAdminApi } from "./api/admin.ts";
 import { routeAnalyticsApi } from "./api/analytics.ts";
 import { routeAuthApi } from "./api/auth.ts";
+import { publicPdfResponse, routePdfAdminApi } from "./api/pdf.ts";
 import { clientAsset } from "./client-assets.ts";
 import { handleMcp } from "./mcp.ts";
 import {
@@ -20,6 +21,7 @@ import { D1ViewerRepository } from "./data/viewer.ts";
 import { D1AssetStore } from "./data/assets.ts";
 import { ViewerService } from "./services/viewer.ts";
 import { D1PublishingRepository } from "./data/repository.ts";
+import { D1PdfRepository } from "./data/pdf.ts";
 
 function structuredLog(level: "info" | "error", event: string, request: Request, detail?: string): void {
   const pathname = new URL(request.url).pathname;
@@ -98,6 +100,8 @@ async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecution
     }
     const adminResponse = await routeAdminApi(request, env);
     if (adminResponse) return applyHeaders(adminResponse, appHeaders(env));
+    const pdfResponse = await routePdfAdminApi(request, env);
+    if (pdfResponse) return applyHeaders(pdfResponse, appHeaders(env));
     const publishingResponse = await routePublishingApi(request, env);
     if (publishingResponse) return applyHeaders(publishingResponse, appHeaders(env));
     const viewerResponse = await routeOwnerViewerApi(request, env);
@@ -112,6 +116,11 @@ async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecution
   }
 
   if (url.pathname.startsWith("/s/")) {
+    const pdfMatch = url.pathname.match(/^\/s\/([^/]+)\/pdf$/u);
+    if (pdfMatch?.[1]) {
+      const pdf = await publicPdfResponse(request, env, ctx, pdfMatch[1]);
+      return applyHeaders(pdf ?? html(unavailablePage(), 404), appHeaders(env));
+    }
     const token = url.pathname.slice(3);
     const resolved = await new ViewerService(
       new D1ViewerRepository(env.DB),
@@ -123,7 +132,11 @@ async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecution
       return applyHeaders(html(unavailablePage(), status), appHeaders(env));
     }
     const source = `${env.CONTENT_ORIGIN}/s/${encodeURIComponent(token)}/v/${resolved.snapshotId}/index.html`;
-    return applyHeaders(html(viewerPage(source, { token, snapshotId: resolved.snapshotId })), appHeaders(env));
+    return applyHeaders(html(viewerPage(source, {
+      token,
+      snapshotId: resolved.snapshotId,
+      pdfUrl: resolved.hasPdf ? `/s/${encodeURIComponent(token)}/pdf` : undefined,
+    })), appHeaders(env));
   }
 
   return applyHeaders(html(unavailablePage(), 404), appHeaders(env));
@@ -183,6 +196,12 @@ export default {
     return handleRequest(request, env, ctx as PreviewExecutionContext);
   },
   scheduled(controller, env, ctx) {
-    ctx.waitUntil(new D1PublishingRepository(env.DB).cleanup(new Date(controller.scheduledTime)));
+    const scheduledAt = new Date(controller.scheduledTime);
+    ctx.waitUntil(
+      Promise.all([
+        new D1PublishingRepository(env.DB).cleanup(scheduledAt),
+        new D1PdfRepository(env.DB).cleanup(scheduledAt),
+      ]).then(() => undefined),
+    );
   },
 } satisfies ExportedHandler<PreviewEnv>;

@@ -1,4 +1,5 @@
 import { shareTokenForId } from "../domain/links.ts";
+import { D1PdfRepository } from "./pdf.ts";
 
 type Row = Record<string, string | number | null>;
 
@@ -12,6 +13,7 @@ export interface ContentSummary {
   activeLinkCount: number;
   meaningfulViews: number;
   activeVisibleMs: number;
+  pdfDownloadsServed: number;
 }
 
 export class D1AdminRepository {
@@ -28,7 +30,8 @@ export class D1AdminRepository {
                 COUNT(DISTINCT sl.id) AS link_count,
                 COUNT(DISTINCT CASE WHEN sl.revoked_at IS NULL AND (sl.expires_at IS NULL OR sl.expires_at > ?) THEN sl.id END) AS active_link_count,
                 COALESCE(SUM(da.meaningful_views),0) AS meaningful_views,
-                COALESCE(SUM(da.active_visible_ms),0) AS active_visible_ms
+                COALESCE(SUM(da.active_visible_ms),0) AS active_visible_ms,
+                COALESCE(SUM(da.pdf_downloads_served),0) AS pdf_downloads_served
            FROM content c
       LEFT JOIN content_version cv ON cv.id = c.active_version_id
       LEFT JOIN share_link sl ON sl.content_id = c.id
@@ -48,7 +51,7 @@ export class D1AdminRepository {
       .first<Row>();
     if (!content) return null;
 
-    const [currentVersion, links, aggregates] = await Promise.all([
+    const [currentVersion, links, aggregates, pdfCompanion] = await Promise.all([
       this.db
         .prepare(
           `SELECT id,sequence,status,source_format,total_bytes,created_at,activated_at
@@ -61,7 +64,9 @@ export class D1AdminRepository {
           `SELECT sl.id,sl.label,sl.created_at,sl.expires_at,sl.revoked_at,
                   COALESCE(SUM(da.meaningful_views),0) AS meaningful_views,
                   COALESCE(SUM(da.active_visible_ms),0) AS active_visible_ms,
-                  MAX(da.last_view_at) AS last_view_at
+                  MAX(da.last_view_at) AS last_view_at,
+                  COALESCE(SUM(da.pdf_downloads_served),0) AS pdf_downloads_served,
+                  MAX(da.last_pdf_download_at) AS last_pdf_download_at
              FROM share_link sl
         LEFT JOIN daily_aggregate da ON da.share_link_id = sl.id
             WHERE sl.content_id = ?
@@ -72,12 +77,14 @@ export class D1AdminRepository {
         .all<Row>(),
       this.db
         .prepare(
-          `SELECT da.day,SUM(da.meaningful_views) AS meaningful_views,SUM(da.active_visible_ms) AS active_visible_ms
+          `SELECT da.day,SUM(da.meaningful_views) AS meaningful_views,SUM(da.active_visible_ms) AS active_visible_ms,
+                  SUM(da.pdf_downloads_served) AS pdf_downloads_served
              FROM daily_aggregate da JOIN share_link sl ON sl.id = da.share_link_id
             WHERE sl.content_id = ? GROUP BY da.day ORDER BY da.day DESC LIMIT 30`,
         )
         .bind(contentId)
         .all<Row>(),
+      new D1PdfRepository(this.db).stateForContent(contentId),
     ]);
 
     return {
@@ -112,13 +119,17 @@ export class D1AdminRepository {
           meaningfulViews: Number(row.meaningful_views),
           activeVisibleMs: Number(row.active_visible_ms),
           lastViewAt: row.last_view_at === null ? null : String(row.last_view_at),
+          pdfDownloadsServed: Number(row.pdf_downloads_served),
+          lastPdfDownloadAt: row.last_pdf_download_at === null ? null : String(row.last_pdf_download_at),
         })),
       ),
       aggregates: aggregates.results.map((row) => ({
         day: String(row.day),
         meaningfulViews: Number(row.meaningful_views),
         activeVisibleMs: Number(row.active_visible_ms),
+        pdfDownloadsServed: Number(row.pdf_downloads_served),
       })),
+      pdfCompanion,
     };
   }
 
@@ -133,6 +144,7 @@ export class D1AdminRepository {
       activeLinkCount: Number(row.active_link_count),
       meaningfulViews: Number(row.meaningful_views),
       activeVisibleMs: Number(row.active_visible_ms),
+      pdfDownloadsServed: Number(row.pdf_downloads_served),
     };
   }
 }

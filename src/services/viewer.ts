@@ -7,6 +7,7 @@ export interface SharedView {
   state: LinkState | "invalid";
   token: string;
   snapshotId?: string;
+  hasPdf?: boolean;
 }
 
 export interface AssetResponse {
@@ -29,7 +30,7 @@ export class ViewerService {
     if (!linkId) return { state: "invalid", token };
     const resolved = await this.repository.resolveShare(linkId, now);
     if (!resolved) return { state: "invalid", token };
-    return { state: resolved.state, token, snapshotId: resolved.snapshotId };
+    return { state: resolved.state, token, snapshotId: resolved.snapshotId, hasPdf: resolved.hasPdf };
   }
 
   async getSharedAsset(token: string, snapshotId: string, rawPath: string, now = new Date()): Promise<AssetResponse | null> {

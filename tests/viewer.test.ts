@@ -7,6 +7,7 @@ import { D1AssetStore } from "../src/data/assets.ts";
 import { handleRequest } from "../src/index.ts";
 import { PublishingService } from "../src/services/publishing.ts";
 import { createOwnerSession, OWNER_SESSION_COOKIE } from "../src/security/auth.ts";
+import { D1PdfRepository } from "../src/data/pdf.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "../src/types.ts";
 
 class BoundStatement {
@@ -44,6 +45,7 @@ class SqliteD1 {
       "0003_measurement_receipts.sql",
       "0004_d1_asset_storage.sql",
       "0005_latest_only_retention.sql",
+      "0006_pdf_companion.sql",
     ]) {
       const path = fileURLToPath(new URL(`../migrations/${name}`, import.meta.url));
       this.raw.exec(readFileSync(path, "utf8"));
@@ -131,6 +133,33 @@ describe("public and owner viewing", () => {
     });
     await publishing.uploadAsset(plan.uploadId, "index.html", uploadRequest(payload));
     await publishing.commit(plan.uploadId);
+    return plan;
+  }
+
+  async function attachPdf(contentId: string, activeVersionId: string, payload: Uint8Array, fileName = "companion.pdf") {
+    const start = await handleRequest(
+      await ownerRequest(env, `https://app.test/api/admin/contents/${contentId}/pdf/uploads`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ fileName, size: payload.byteLength, expectedActiveVersionId: activeVersionId }),
+      }),
+      env,
+      anonymous,
+    );
+    expect(start.status).toBe(201);
+    const plan = await start.json() as { uploadUrl: string; commitUrl: string; pdfId: string };
+    const uploaded = await handleRequest(
+      await ownerRequest(env, plan.uploadUrl, {
+        method: "PUT",
+        headers: { "content-type": "application/pdf" },
+        body: payload.slice().buffer as ArrayBuffer,
+      }),
+      env,
+      anonymous,
+    );
+    expect(uploaded.status).toBe(204);
+    const committed = await handleRequest(await ownerRequest(env, plan.commitUrl, { method: "POST" }), env, anonymous);
+    expect(committed.status).toBe(200);
     return plan;
   }
 
@@ -384,5 +413,110 @@ describe("public and owner viewing", () => {
       links: [{ label: "Client", url: link.url, state: "active" }],
     });
     expect((await handleRequest(new Request("https://app.test/api/admin/contents"), env, anonymous)).status).toBe(401);
+  });
+
+  it("uploads, guards, reuses, measures, and removes a PDF companion", async () => {
+    const first = await publish("PDF lifecycle", "<h1>First</h1>");
+    const link = await publishing.createShareLink({ contentId: first.contentId, label: "Recipient", validForSeconds: null });
+    expect(await (await handleRequest(new Request(link.url), env, anonymous)).text()).not.toContain("Download PDF");
+
+    const pdfBytes = bytes("%PDF-1.7\ncompanion A");
+    const pdf = await attachPdf(first.contentId, first.versionId, pdfBytes, "Board pack.pdf");
+    const shell = await handleRequest(new Request(link.url), env, anonymous);
+    expect(await shell.text()).toContain("Download PDF");
+
+    const pending: Promise<unknown>[] = [];
+    const tracked = { waitUntil(promise: Promise<unknown>) { pending.push(promise); }, passThroughOnException() {}, props: {} } as unknown as PreviewExecutionContext;
+    const download = await handleRequest(new Request(`${link.url}/pdf`), env, tracked);
+    expect(download.status).toBe(200);
+    expect(download.headers.get("content-type")).toBe("application/pdf");
+    expect(download.headers.get("content-disposition")).toContain("attachment");
+    expect(new Uint8Array(await download.arrayBuffer())).toEqual(pdfBytes);
+    await Promise.all(pending);
+    expect(database.raw.prepare("SELECT pdf_downloads_served,meaningful_views FROM daily_aggregate").get()).toEqual({
+      pdf_downloads_served: 1,
+      meaningful_views: 0,
+    });
+
+    const ownerDownload = await handleRequest(await ownerRequest(env, `${link.url}/pdf`), env, tracked);
+    expect(new Uint8Array(await ownerDownload.arrayBuffer())).toEqual(pdfBytes);
+    const head = await handleRequest(new Request(`${link.url}/pdf`, { method: "HEAD" }), env, tracked);
+    expect(head.status).toBe(200);
+    expect(database.raw.prepare("SELECT pdf_downloads_served FROM daily_aggregate").get()).toEqual({ pdf_downloads_served: 1 });
+
+    const canceled = await handleRequest(new Request(`${link.url}/pdf`), env, tracked);
+    await canceled.body?.cancel("recipient canceled");
+    await Promise.all(pending);
+    expect(database.raw.prepare("SELECT pdf_downloads_served FROM daily_aggregate").get()).toEqual({ pdf_downloads_served: 1 });
+
+    const nextBytes = bytes("<h1>Second</h1>");
+    const next = await publishing.startVersion(first.contentId, "html", [{ path: "index.html", size: nextBytes.byteLength }]);
+    await publishing.uploadAsset(next.uploadId, "index.html", uploadRequest(nextBytes));
+    expect(await (await handleRequest(new Request(link.url), env, anonymous)).text()).toContain("Download PDF");
+    await publishing.commit(next.uploadId);
+    expect(await (await handleRequest(new Request(link.url), env, anonymous)).text()).not.toContain("Download PDF");
+    expect((await handleRequest(new Request(`${link.url}/pdf`), env, anonymous)).status).toBe(404);
+
+    const confirmed = await handleRequest(
+      await ownerRequest(env, `https://app.test/api/admin/contents/${first.contentId}/pdf/confirm`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pdfId: pdf.pdfId, expectedActiveVersionId: next.versionId }),
+      }),
+      env,
+      anonymous,
+    );
+    expect(confirmed.status).toBe(200);
+    expect(await (await handleRequest(new Request(link.url), env, anonymous)).text()).toContain("Download PDF");
+
+    const removed = await handleRequest(
+      await ownerRequest(env, `https://app.test/api/admin/contents/${first.contentId}/pdf`, { method: "DELETE" }),
+      env,
+      anonymous,
+    );
+    expect(removed.status).toBe(200);
+    expect((await handleRequest(new Request(`${link.url}/pdf`), env, anonymous)).status).toBe(404);
+    expect(database.raw.prepare("SELECT pdf_downloads_served FROM daily_aggregate").get()).toEqual({ pdf_downloads_served: 1 });
+    expect(await new D1PdfRepository(env.DB).cleanup(new Date(Date.now() + 25 * 60 * 60 * 1_000))).toBe(1);
+    expect(database.raw.prepare("SELECT COUNT(*) AS count FROM pdf_companion").get()).toEqual({ count: 0 });
+    expect(database.raw.prepare("SELECT pdf_downloads_served FROM daily_aggregate").get()).toEqual({ pdf_downloads_served: 1 });
+  });
+
+  it("rejects invalid PDF data and stale commits without replacing an approved companion", async () => {
+    const first = await publish("PDF validation", "<h1>First</h1>");
+    const original = bytes("%PDF-1.7\noriginal");
+    await attachPdf(first.contentId, first.versionId, original);
+
+    const start = await handleRequest(
+      await ownerRequest(env, `https://app.test/api/admin/contents/${first.contentId}/pdf/uploads`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ fileName: "bad.pdf", size: 5, expectedActiveVersionId: first.versionId }),
+      }), env, anonymous,
+    );
+    const plan = await start.json() as { uploadUrl: string; commitUrl: string };
+    const bad = await handleRequest(
+      await ownerRequest(env, plan.uploadUrl, { method: "PUT", body: bytes("hello").buffer as ArrayBuffer }),
+      env, anonymous,
+    );
+    expect(bad.status).toBe(400);
+
+    const replacement = bytes("%PDF-1.7\nreplacement");
+    const replacementStart = await handleRequest(
+      await ownerRequest(env, `https://app.test/api/admin/contents/${first.contentId}/pdf/uploads`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ fileName: "new.pdf", size: replacement.byteLength, expectedActiveVersionId: first.versionId }),
+      }), env, anonymous,
+    );
+    const replacementPlan = await replacementStart.json() as { uploadUrl: string; commitUrl: string };
+    expect((await handleRequest(await ownerRequest(env, replacementPlan.uploadUrl, { method: "PUT", body: replacement.buffer as ArrayBuffer }), env, anonymous)).status).toBe(204);
+
+    const nextBytes = bytes("<h1>Second</h1>");
+    const next = await publishing.startVersion(first.contentId, "html", [{ path: "index.html", size: nextBytes.byteLength }]);
+    await publishing.uploadAsset(next.uploadId, "index.html", uploadRequest(nextBytes));
+    await publishing.commit(next.uploadId);
+    expect((await handleRequest(await ownerRequest(env, replacementPlan.commitUrl, { method: "POST" }), env, anonymous)).status).toBe(409);
+    const detail = await handleRequest(await ownerRequest(env, `https://app.test/api/admin/contents/${first.contentId}`), env, anonymous);
+    expect(await detail.json()).toMatchObject({ pdfCompanion: { state: "outdated", fileName: "companion.pdf" } });
   });
 });

@@ -35,4 +35,20 @@ export class D1AnalyticsRepository {
       .run();
     return true;
   }
+
+  async recordPdfDownload(linkId: string, now = new Date()): Promise<void> {
+    const timestamp = now.toISOString();
+    const day = timestamp.slice(0, 10);
+    await this.db
+      .prepare(
+        `INSERT INTO daily_aggregate
+          (share_link_id,day,meaningful_views,active_visible_ms,last_view_at,pdf_downloads_served,last_pdf_download_at)
+         VALUES (?,?,0,0,NULL,1,?)
+         ON CONFLICT (share_link_id,day) DO UPDATE SET
+           pdf_downloads_served = pdf_downloads_served + 1,
+           last_pdf_download_at = excluded.last_pdf_download_at`,
+      )
+      .bind(linkId, day, timestamp)
+      .run();
+  }
 }

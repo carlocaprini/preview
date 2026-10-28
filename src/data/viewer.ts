@@ -6,6 +6,7 @@ export interface ShareResolution {
   contentId?: string;
   versionId?: string;
   snapshotId?: string;
+  hasPdf?: boolean;
 }
 
 export interface ResolvedAsset {
@@ -27,10 +28,12 @@ export class D1ViewerRepository {
     const row = await this.db
       .prepare(
         `SELECT sl.id AS link_id,sl.content_id,sl.expires_at,sl.revoked_at,
-                cv.id AS version_id,cv.public_snapshot_id,cv.status AS version_status
+                cv.id AS version_id,cv.public_snapshot_id,cv.status AS version_status,
+                CASE WHEN c.pdf_approved_html_version_id = c.active_version_id AND p.status = 'ready' THEN 1 ELSE 0 END AS has_pdf
            FROM share_link sl
            JOIN content c ON c.id = sl.content_id
       LEFT JOIN content_version cv ON cv.id = c.active_version_id
+      LEFT JOIN pdf_companion p ON p.id = c.current_pdf_id
           WHERE sl.id = ?`,
       )
       .bind(linkId)
@@ -49,6 +52,7 @@ export class D1ViewerRepository {
       contentId: String(row.content_id),
       versionId: String(row.version_id),
       snapshotId: String(row.public_snapshot_id),
+      hasPdf: Number(row.has_pdf) === 1,
     };
   }
 

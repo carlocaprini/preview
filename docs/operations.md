@@ -33,6 +33,8 @@ Scope the deployment token to the intended account, database, and zone:
 
 The CI token does not need Access, billing, or subscription permissions. Production deployment must fail when any required binding, secret, migration, or domain is missing.
 
+Migration `0006_pdf_companion.sql` adds optional companion metadata, 512 KiB PDF chunks, guarded upload sessions, and additive aggregate columns. Apply it after the latest-only retention migration and before deploying code that exposes PDF routes. The migration preserves existing HTML aggregates with zero PDF deliveries.
+
 Configure these protected `production` GitHub environment secrets:
 
 - `CLOUDFLARE_API_TOKEN`
@@ -58,6 +60,8 @@ Export the complete D1 database on a regular schedule outside this repository. T
 
 Restore D1, then verify that every active manifest has a matching payload row and the declared number of chunks before re-enabling share traffic. Perform restore drills against staging; never test a restore in production. Revoking a link removes access but does not erase the current payload. Superseded HTML payloads are automatically inaccessible and eligible for deletion after 24 hours; migration 0005 assigns that deadline to versions already superseded at rollout. A scheduled Worker event runs hourly and removes at most 20 superseded plus 20 abandoned staging versions per invocation. Monitor the oldest `purge_after` and expired `upload_session.expires_at` values to confirm eventual progress.
 
+PDF replacements and removals detach bytes immediately from every public link. An hourly scheduled cleanup expires abandoned PDF uploads and deletes at most 20 unreferenced companions older than 24 hours per invocation. Monitor expired `pdf_upload_session` rows and unreferenced `pdf_companion` rows to confirm the cleanup backlog continues to fall.
+
 ## Release and rollback
 
 Pull requests execute `npm run check` and the responsive Playwright suite without Cloudflare credentials. Each independently reviewable change is merged through its own issue and pull request. The push-to-`main` workflow validates secrets, repeats all gates, verifies the API token, applies D1 migrations, deploys, and probes the public, authentication, cache, and origin-isolation boundaries.
@@ -67,6 +71,8 @@ Worker versions remain available in Cloudflare for code rollback. Database migra
 Operational logs must never contain share URLs, query strings, bearer tokens, uploaded filenames, owner email addresses, IP addresses, or request bodies. Automatic invocation logs are disabled because bearer tokens live in URL paths. Application logs emit only method, a redacted route family, event name, and safe error category.
 
 ## Cost guardrails
+
+An optional companion PDF is capped at 10 MiB and consumes the same D1 database capacity. Uploads validate the declared and actual length plus the `%PDF-` signature; this is format validation, not malware scanning. Stale unreferenced companions receive a 24-hour grace period before opportunistic cleanup so an in-progress download is not broken. Monitor D1 size after enabling companions and reduce the cap if live staging evidence shows unacceptable latency, query, CPU, or storage pressure.
 
 V1 caps a package at 20 MiB expanded, 10 MiB per file, and 50 files. ZIP expansion happens in the authenticated browser or local CLI, never in the Worker. The browser inspects declared ZIP sizes before expansion, and the server independently validates the resulting manifest. Each file is transferred through one authenticated request, bounded to its declared byte count, hashed, and stored as 512 KiB D1 chunks. The service rejects oversize manifests before writes and fails closed when D1 is unavailable.
 
