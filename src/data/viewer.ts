@@ -58,11 +58,13 @@ export class D1ViewerRepository {
         `SELECT sl.id AS link_id,sl.content_id,sl.expires_at,sl.revoked_at,
                 cv.id AS version_id,cv.public_snapshot_id,va.path,va.media_type,va.expected_bytes
            FROM share_link sl
+           JOIN content c ON c.id = sl.content_id
            JOIN content_version cv ON cv.content_id = sl.content_id AND cv.public_snapshot_id = ? AND cv.status = 'ready'
            JOIN version_asset va ON va.version_id = cv.id AND va.path = ? AND va.uploaded_bytes = va.expected_bytes
-          WHERE sl.id = ?`,
+          WHERE sl.id = ?
+            AND (c.active_version_id = cv.id OR (cv.purge_after IS NOT NULL AND cv.purge_after > ?))`,
       )
-      .bind(snapshotId, path, linkId)
+      .bind(snapshotId, path, linkId, now.toISOString())
       .first<Row>();
     if (!row || row.revoked_at !== null) return null;
     if (row.expires_at !== null && Date.parse(String(row.expires_at)) <= now.getTime()) return null;

@@ -56,11 +56,11 @@ Keep public `/`, `/assets/viewer.js`, `/api/public/measure`, application-origin 
 
 Export the complete D1 database on a regular schedule outside this repository. The export contains metadata and asset payload chunks and must be stored encrypted with retention appropriate to the content.
 
-Restore D1, then verify that every active manifest has a matching payload row and the declared number of chunks before re-enabling share traffic. Perform restore drills against staging; never test a restore in production. Revoking a link removes access but does not erase the current payload. Superseded HTML payloads are automatically eligible for deletion after 24 hours; a scheduled Worker event runs hourly and removes at most 20 superseded plus 20 abandoned staging versions per invocation. Monitor the oldest `purge_after` and expired `upload_session.expires_at` values to confirm eventual progress.
+Restore D1, then verify that every active manifest has a matching payload row and the declared number of chunks before re-enabling share traffic. Perform restore drills against staging; never test a restore in production. Revoking a link removes access but does not erase the current payload. Superseded HTML payloads are automatically inaccessible and eligible for deletion after 24 hours; migration 0005 assigns that deadline to versions already superseded at rollout. A scheduled Worker event runs hourly and removes at most 20 superseded plus 20 abandoned staging versions per invocation. Monitor the oldest `purge_after` and expired `upload_session.expires_at` values to confirm eventual progress.
 
 ## Release and rollback
 
-Pull requests execute `npm run check` and the responsive Playwright suite without Cloudflare credentials. The owner merges the complete stack once. The push-to-`main` workflow validates secrets, repeats all gates, verifies the API token, applies D1 migrations, deploys, and probes the public, authentication, cache, and origin-isolation boundaries.
+Pull requests execute `npm run check` and the responsive Playwright suite without Cloudflare credentials. Each independently reviewable change is merged through its own issue and pull request. The push-to-`main` workflow validates secrets, repeats all gates, verifies the API token, applies D1 migrations, deploys, and probes the public, authentication, cache, and origin-isolation boundaries.
 
 Worker versions remain available in Cloudflare for code rollback. Database migrations in V1 are additive; do not roll D1 backward destructively. When rollback is required, redeploy the prior Worker version while leaving the additive schema in place, then investigate from redacted Worker logs.
 

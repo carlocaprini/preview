@@ -223,12 +223,25 @@ describe("staged publishing", () => {
     await service.uploadAsset(v1.uploadId, "index.html", assetRequest(v1Bytes));
     await service.commit(v1.uploadId, new Date("2026-10-28T00:00:00.000Z"));
     const link = await service.createShareLink({ contentId: v1.contentId, label: "History", validForSeconds: null });
-    const linkId = database.raw.prepare("SELECT id FROM share_link WHERE content_id = ?").get(v1.contentId) as { id: string };
+    const expiredLink = await service.createShareLink({ contentId: v1.contentId, label: "Expired", validForSeconds: null });
+    const revokedLink = await service.createShareLink({ contentId: v1.contentId, label: "Revoked", validForSeconds: null });
+    database.raw.prepare("UPDATE share_link SET expires_at = ? WHERE id = ?").run("2026-10-27T00:00:00.000Z", expiredLink.linkId);
+    database.raw.prepare("UPDATE share_link SET revoked_at = ? WHERE id = ?").run("2026-10-27T00:00:00.000Z", revokedLink.linkId);
     database.raw
       .prepare(
         "INSERT INTO daily_aggregate (share_link_id,day,meaningful_views,active_visible_ms,last_view_at) VALUES (?,?,?,?,?)",
       )
-      .run(linkId.id, "2026-10-28", 4, 12_000, "2026-10-28T00:05:00.000Z");
+      .run(link.linkId, "2026-10-28", 4, 12_000, "2026-10-28T00:05:00.000Z");
+    database.raw
+      .prepare(
+        "INSERT INTO daily_aggregate (share_link_id,day,meaningful_views,active_visible_ms,last_view_at) VALUES (?,?,?,?,?)",
+      )
+      .run(expiredLink.linkId, "2026-10-27", 2, 3_000, "2026-10-27T00:05:00.000Z");
+    database.raw
+      .prepare(
+        "INSERT INTO daily_aggregate (share_link_id,day,meaningful_views,active_visible_ms,last_view_at) VALUES (?,?,?,?,?)",
+      )
+      .run(revokedLink.linkId, "2026-10-27", 1, 1_000, "2026-10-27T00:05:00.000Z");
 
     const v2Bytes = new TextEncoder().encode("<h1>Version two</h1>");
     const v2 = await service.startVersion(
@@ -249,9 +262,10 @@ describe("staged publishing", () => {
     expect(await assets.get(v1.versionId, "index.html")).toBeNull();
     expect(await assets.get(v2.versionId, "index.html")).not.toBeNull();
     expect(database.raw.prepare("SELECT COUNT(*) AS count FROM content_version WHERE id = ?").get(v1.versionId)).toEqual({ count: 0 });
-    expect(database.raw.prepare("SELECT meaningful_views,active_visible_ms FROM daily_aggregate").get()).toEqual({
-      meaningful_views: 4,
-      active_visible_ms: 12_000,
+    expect(database.raw.prepare("SELECT COUNT(*) AS count FROM share_link").get()).toEqual({ count: 3 });
+    expect(database.raw.prepare("SELECT SUM(meaningful_views) AS meaningful_views,SUM(active_visible_ms) AS active_visible_ms FROM daily_aggregate").get()).toEqual({
+      meaningful_views: 7,
+      active_visible_ms: 16_000,
     });
     expect(link.url).toContain("/s/");
 
@@ -292,5 +306,43 @@ describe("staged publishing", () => {
       purgedVersions: 0,
       purgedStagingVersions: 0,
     });
+  });
+
+  it("never points content at a version removed between validation and activation", async () => {
+    const activeBytes = new TextEncoder().encode("<h1>Still active</h1>");
+    const active = await service.createContent({
+      title: "Cleanup race",
+      sourceFormat: "html",
+      files: [{ path: "index.html", size: activeBytes.byteLength }],
+    });
+    await service.uploadAsset(active.uploadId, "index.html", assetRequest(activeBytes));
+    await service.commit(active.uploadId, new Date("2026-10-28T00:00:00.000Z"));
+
+    const replacementBytes = new TextEncoder().encode("<h1>Replacement</h1>");
+    const replacement = await service.startVersion(
+      active.contentId,
+      "html",
+      [{ path: "index.html", size: replacementBytes.byteLength }],
+      new Date("2026-10-28T01:00:00.000Z"),
+    );
+    await service.uploadAsset(
+      replacement.uploadId,
+      "index.html",
+      assetRequest(replacementBytes),
+      new Date("2026-10-28T01:01:00.000Z"),
+    );
+
+    // This is the snapshot commit has after validating the manifest. Cleanup
+    // wins the race before activateUpload starts its transactional batch.
+    const validatedUpload = await repository.getUpload(replacement.uploadId);
+    expect(validatedUpload).not.toBeNull();
+    expect((await repository.cleanup(new Date("2026-10-28T02:00:00.000Z"))).purgedStagingVersions).toBe(1);
+    expect(await repository.activateUpload(validatedUpload!, new Date("2026-10-28T02:00:00.001Z"))).toBe("stale");
+
+    expect(database.raw.prepare("SELECT active_version_id FROM content WHERE id = ?").get(active.contentId)).toEqual({
+      active_version_id: active.versionId,
+    });
+    expect(await assets.get(active.versionId, "index.html")).not.toBeNull();
+    expect(await assets.get(replacement.versionId, "index.html")).toBeNull();
   });
 });

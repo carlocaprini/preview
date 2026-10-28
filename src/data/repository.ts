@@ -220,16 +220,37 @@ export class D1PublishingRepository implements PublishingRepository {
       return "already_active";
     }
 
+    // D1 batches execute sequentially in one transaction. The pointer update
+    // consumes changes() from the immediately preceding staging transition,
+    // so a cleanup that removed the version first can never create a dangling
+    // active_version_id.
     const results = await this.db.batch([
       this.db
-        .prepare("UPDATE content_version SET status = 'ready',activated_at = COALESCE(activated_at,?) WHERE id = ? AND status = 'staging'")
-        .bind(timestamp, upload.versionId),
+        .prepare(
+          `UPDATE content_version
+              SET status = 'ready',activated_at = COALESCE(activated_at,?)
+            WHERE id = ? AND content_id = ? AND status = 'staging'`,
+        )
+        .bind(timestamp, upload.versionId, upload.contentId),
       this.db
         .prepare(
           `UPDATE content SET active_version_id = ?,updated_at = ?
-            WHERE id = ? AND ((active_version_id IS NULL AND ? IS NULL) OR active_version_id = ?)`,
+            WHERE id = ?
+              AND ((active_version_id IS NULL AND ? IS NULL) OR active_version_id = ?)
+              AND changes() = 1
+              AND EXISTS (
+                SELECT 1 FROM content_version cv
+                 WHERE cv.id = ? AND cv.content_id = content.id AND cv.status = 'ready'
+              )`,
         )
-        .bind(upload.versionId, timestamp, upload.contentId, upload.expectedActiveVersionId, upload.expectedActiveVersionId),
+        .bind(
+          upload.versionId,
+          timestamp,
+          upload.contentId,
+          upload.expectedActiveVersionId,
+          upload.expectedActiveVersionId,
+          upload.versionId,
+        ),
       this.db
         .prepare(
           `UPDATE content_version
@@ -243,7 +264,7 @@ export class D1PublishingRepository implements PublishingRepository {
         .bind(purgeAfter, upload.expectedActiveVersionId, upload.contentId, upload.versionId),
     ]);
 
-    if ((results[1]?.meta.changes ?? 0) !== 1) {
+    if ((results[0]?.meta.changes ?? 0) !== 1 || (results[1]?.meta.changes ?? 0) !== 1) {
       const current = await this.getContent(upload.contentId);
       if (current?.activeVersionId === upload.versionId) {
         await this.db
@@ -253,7 +274,13 @@ export class D1PublishingRepository implements PublishingRepository {
         return "already_active";
       }
       await this.db.batch([
-        this.db.prepare("UPDATE content_version SET status = 'failed' WHERE id = ?").bind(upload.versionId),
+        this.db
+          .prepare(
+            `UPDATE content_version SET status = 'failed'
+              WHERE id = ? AND status IN ('staging','ready')
+                AND NOT EXISTS (SELECT 1 FROM content c WHERE c.active_version_id = content_version.id)`,
+          )
+          .bind(upload.versionId),
         this.db.prepare("UPDATE upload_session SET state = 'failed' WHERE id = ? AND state = 'open'").bind(upload.id),
       ]);
       return "stale";
