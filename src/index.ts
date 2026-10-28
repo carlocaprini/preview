@@ -19,6 +19,7 @@ import { adminPage, homePage, loginPage, unavailablePage, viewerPage } from "./u
 import { D1ViewerRepository } from "./data/viewer.ts";
 import { D1AssetStore } from "./data/assets.ts";
 import { ViewerService } from "./services/viewer.ts";
+import { D1PublishingRepository } from "./data/repository.ts";
 
 function structuredLog(level: "info" | "error", event: string, request: Request, detail?: string): void {
   const pathname = new URL(request.url).pathname;
@@ -180,5 +181,8 @@ export async function handleRequest(
 export default {
   fetch(request, env, ctx) {
     return handleRequest(request, env, ctx as PreviewExecutionContext);
+  },
+  scheduled(controller, env, ctx) {
+    ctx.waitUntil(new D1PublishingRepository(env.DB).cleanup(new Date(controller.scheduledTime)));
   },
 } satisfies ExportedHandler<PreviewEnv>;

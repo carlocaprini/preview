@@ -11,6 +11,7 @@ describe("initial D1 migration", () => {
       "0002_public_snapshots.sql",
       "0003_measurement_receipts.sql",
       "0004_d1_asset_storage.sql",
+      "0005_latest_only_retention.sql",
     ]) {
       const migrationPath = fileURLToPath(new URL(`../migrations/${name}`, import.meta.url));
       database.exec(readFileSync(migrationPath, "utf8"));
@@ -45,6 +46,9 @@ describe("initial D1 migration", () => {
 
     const versionColumns = database.prepare("PRAGMA table_info(content_version)").all().map((row) => row.name);
     expect(versionColumns).toContain("public_snapshot_id");
+    expect(versionColumns).toContain("purge_after");
+    const contentColumns = database.prepare("PRAGMA table_info(content)").all().map((row) => row.name);
+    expect(contentColumns).toContain("next_version_sequence");
     expect(tables).toContain("measurement_receipt");
   });
 });

@@ -45,6 +45,7 @@ class SqliteD1 {
       "0002_public_snapshots.sql",
       "0003_measurement_receipts.sql",
       "0004_d1_asset_storage.sql",
+      "0005_latest_only_retention.sql",
     ]) {
       const migration = fileURLToPath(new URL(`../migrations/${name}`, import.meta.url));
       this.raw.exec(readFileSync(migration, "utf8"));
@@ -84,12 +85,14 @@ describe("staged publishing", () => {
   let database: SqliteD1;
   let service: PublishingService;
   let assets: D1AssetStore;
+  let repository: D1PublishingRepository;
 
   beforeEach(() => {
     database = new SqliteD1();
     assets = new D1AssetStore(database as unknown as D1Database);
+    repository = new D1PublishingRepository(database as unknown as D1Database);
     service = new PublishingService(
-      new D1PublishingRepository(database as unknown as D1Database),
+      repository,
       assets,
       "https://preview.example",
       signingKey,
@@ -208,5 +211,86 @@ describe("staged publishing", () => {
     database.prepareCalls = 0;
     await service.commit(plan.uploadId);
     expect(database.prepareCalls).toBeLessThanOrEqual(10);
+  });
+
+  it("retains the prior snapshot for 24 hours, then purges only its bytes and metadata", async () => {
+    const v1Bytes = new TextEncoder().encode("<h1>Version one</h1>");
+    const v1 = await service.createContent({
+      title: "Latest only",
+      sourceFormat: "html",
+      files: [{ path: "index.html", size: v1Bytes.byteLength }],
+    });
+    await service.uploadAsset(v1.uploadId, "index.html", assetRequest(v1Bytes));
+    await service.commit(v1.uploadId, new Date("2026-10-28T00:00:00.000Z"));
+    const link = await service.createShareLink({ contentId: v1.contentId, label: "History", validForSeconds: null });
+    const linkId = database.raw.prepare("SELECT id FROM share_link WHERE content_id = ?").get(v1.contentId) as { id: string };
+    database.raw
+      .prepare(
+        "INSERT INTO daily_aggregate (share_link_id,day,meaningful_views,active_visible_ms,last_view_at) VALUES (?,?,?,?,?)",
+      )
+      .run(linkId.id, "2026-10-28", 4, 12_000, "2026-10-28T00:05:00.000Z");
+
+    const v2Bytes = new TextEncoder().encode("<h1>Version two</h1>");
+    const v2 = await service.startVersion(
+      v1.contentId,
+      "html",
+      [{ path: "index.html", size: v2Bytes.byteLength }],
+      new Date("2026-10-28T01:00:00.000Z"),
+    );
+    await service.uploadAsset(v2.uploadId, "index.html", assetRequest(v2Bytes), new Date("2026-10-28T01:01:00.000Z"));
+    await service.commit(v2.uploadId, new Date("2026-10-28T01:02:00.000Z"));
+
+    expect(await assets.get(v1.versionId, "index.html")).not.toBeNull();
+    expect((await repository.cleanup(new Date("2026-10-29T01:01:59.999Z"))).purgedVersions).toBe(0);
+    expect(await assets.get(v1.versionId, "index.html")).not.toBeNull();
+
+    const cleaned = await repository.cleanup(new Date("2026-10-29T01:02:00.000Z"));
+    expect(cleaned).toEqual({ purgedVersions: 1, purgedStagingVersions: 0 });
+    expect(await assets.get(v1.versionId, "index.html")).toBeNull();
+    expect(await assets.get(v2.versionId, "index.html")).not.toBeNull();
+    expect(database.raw.prepare("SELECT COUNT(*) AS count FROM content_version WHERE id = ?").get(v1.versionId)).toEqual({ count: 0 });
+    expect(database.raw.prepare("SELECT meaningful_views,active_visible_ms FROM daily_aggregate").get()).toEqual({
+      meaningful_views: 4,
+      active_visible_ms: 12_000,
+    });
+    expect(link.url).toContain("/s/");
+
+    const v3Bytes = new TextEncoder().encode("<h1>Version three</h1>");
+    const v3 = await service.startVersion(v1.contentId, "html", [{ path: "index.html", size: v3Bytes.byteLength }]);
+    expect(database.raw.prepare("SELECT sequence FROM content_version WHERE id = ?").get(v3.versionId)).toEqual({ sequence: 3 });
+  });
+
+  it("reclaims expired staging uploads in bounded, retry-safe batches", async () => {
+    const activeBytes = new TextEncoder().encode("<h1>Active</h1>");
+    const active = await service.createContent({
+      title: "Staging cleanup",
+      sourceFormat: "html",
+      files: [{ path: "index.html", size: activeBytes.byteLength }],
+    });
+    await service.uploadAsset(active.uploadId, "index.html", assetRequest(activeBytes));
+    await service.commit(active.uploadId);
+
+    const abandonedBytes = new TextEncoder().encode("<h1>Abandoned</h1>");
+    const abandoned = await service.startVersion(
+      active.contentId,
+      "html",
+      [{ path: "index.html", size: abandonedBytes.byteLength }],
+      new Date("2026-10-28T00:00:00.000Z"),
+    );
+    await service.uploadAsset(
+      abandoned.uploadId,
+      "index.html",
+      assetRequest(abandonedBytes),
+      new Date("2026-10-28T00:01:00.000Z"),
+    );
+
+    expect((await repository.cleanup(new Date("2026-10-28T00:59:59.999Z"))).purgedStagingVersions).toBe(0);
+    expect((await repository.cleanup(new Date("2026-10-28T01:00:00.000Z"), 1)).purgedStagingVersions).toBe(1);
+    expect(await assets.get(abandoned.versionId, "index.html")).toBeNull();
+    expect(await assets.get(active.versionId, "index.html")).not.toBeNull();
+    expect(await repository.cleanup(new Date("2026-10-28T02:00:00.000Z"))).toEqual({
+      purgedVersions: 0,
+      purgedStagingVersions: 0,
+    });
   });
 });

@@ -1,5 +1,5 @@
 import type { SourceFormat, VersionManifest } from "../domain/manifest.ts";
-import { UPLOAD_TTL_MS } from "../domain/limits.ts";
+import { CLEANUP_BATCH_SIZE, SUPERSEDED_VERSION_GRACE_MS, UPLOAD_TTL_MS } from "../domain/limits.ts";
 import { randomId, uuid } from "../domain/ids.ts";
 
 export interface ContentRecord {
@@ -33,6 +33,11 @@ export interface StartVersionResult {
   expiresAt: string;
 }
 
+export interface CleanupResult {
+  purgedVersions: number;
+  purgedStagingVersions: number;
+}
+
 export interface PublishingRepository {
   createContent(title: string, now: Date): Promise<ContentRecord>;
   deleteContentIfEmpty(contentId: string): Promise<void>;
@@ -44,6 +49,7 @@ export interface PublishingRepository {
   markAssetUploaded(versionId: string, path: string, bytes: number, etag: string, now: Date): Promise<void>;
   markUploadExpired(uploadId: string): Promise<void>;
   activateUpload(upload: UploadRecord, now: Date): Promise<"activated" | "already_active" | "stale">;
+  cleanup(now: Date, batchSize?: number): Promise<CleanupResult>;
   createShareLink(input: { id: string; contentId: string; label: string; createdAt: string; expiresAt: string | null }): Promise<void>;
 }
 
@@ -92,10 +98,16 @@ export class D1PublishingRepository implements PublishingRepository {
       const content = await this.getContent(contentId);
       if (!content) throw new Error("Content not found");
       const sequenceRow = await this.db
-        .prepare("SELECT COALESCE(MAX(sequence), 0) + 1 AS sequence FROM content_version WHERE content_id = ?")
+        .prepare(
+          `UPDATE content
+              SET next_version_sequence = next_version_sequence + 1
+            WHERE id = ?
+        RETURNING next_version_sequence - 1 AS sequence`,
+        )
         .bind(contentId)
         .first<{ sequence: number }>();
-      const sequence = Number(sequenceRow?.sequence ?? 1);
+      if (!sequenceRow) throw new Error("Content not found");
+      const sequence = Number(sequenceRow.sequence);
       const versionId = uuid();
       const publicSnapshotId = randomId(16);
       const uploadId = uuid();
@@ -199,6 +211,7 @@ export class D1PublishingRepository implements PublishingRepository {
 
   async activateUpload(upload: UploadRecord, now: Date): Promise<"activated" | "already_active" | "stale"> {
     const timestamp = now.toISOString();
+    const purgeAfter = new Date(now.getTime() + SUPERSEDED_VERSION_GRACE_MS).toISOString();
     if (upload.activeVersionId === upload.versionId) {
       await this.db
         .prepare("UPDATE upload_session SET state = 'committed',committed_at = COALESCE(committed_at,?) WHERE id = ?")
@@ -217,6 +230,17 @@ export class D1PublishingRepository implements PublishingRepository {
             WHERE id = ? AND ((active_version_id IS NULL AND ? IS NULL) OR active_version_id = ?)`,
         )
         .bind(upload.versionId, timestamp, upload.contentId, upload.expectedActiveVersionId, upload.expectedActiveVersionId),
+      this.db
+        .prepare(
+          `UPDATE content_version
+              SET purge_after = COALESCE(purge_after,?)
+            WHERE id = ?
+              AND EXISTS (
+                SELECT 1 FROM content
+                 WHERE id = ? AND active_version_id = ?
+              )`,
+        )
+        .bind(purgeAfter, upload.expectedActiveVersionId, upload.contentId, upload.versionId),
     ]);
 
     if ((results[1]?.meta.changes ?? 0) !== 1) {
@@ -240,6 +264,66 @@ export class D1PublishingRepository implements PublishingRepository {
       .bind(timestamp, upload.id)
       .run();
     return "activated";
+  }
+
+  async cleanup(now: Date, batchSize = CLEANUP_BATCH_SIZE): Promise<CleanupResult> {
+    const limit = Math.max(1, Math.min(CLEANUP_BATCH_SIZE, Math.trunc(batchSize)));
+    const timestamp = now.toISOString();
+    const [superseded, staging] = await Promise.all([
+      this.db
+        .prepare(
+          `SELECT cv.id
+             FROM content_version cv
+            WHERE cv.purge_after IS NOT NULL
+              AND cv.purge_after <= ?
+              AND NOT EXISTS (SELECT 1 FROM content c WHERE c.active_version_id = cv.id)
+            ORDER BY cv.purge_after,cv.id
+            LIMIT ?`,
+        )
+        .bind(timestamp, limit)
+        .all<{ id: string }>(),
+      this.db
+        .prepare(
+          `SELECT cv.id
+             FROM content_version cv
+             JOIN upload_session us ON us.version_id = cv.id
+            WHERE cv.status <> 'ready'
+              AND NOT EXISTS (SELECT 1 FROM content c WHERE c.active_version_id = cv.id)
+              AND (
+                (us.state = 'open' AND us.expires_at <= ?)
+                OR us.state IN ('failed','expired')
+              )
+            ORDER BY us.expires_at,cv.id
+            LIMIT ?`,
+        )
+        .bind(timestamp, limit)
+        .all<{ id: string }>(),
+    ]);
+
+    const supersededIds = superseded.results.map((row) => String(row.id));
+    const stagingIds = staging.results.map((row) => String(row.id));
+    const statements = [
+      ...supersededIds.map((id) =>
+        this.db
+          .prepare(
+            `DELETE FROM content_version
+              WHERE id = ? AND purge_after <= ?
+                AND NOT EXISTS (SELECT 1 FROM content c WHERE c.active_version_id = content_version.id)`,
+          )
+          .bind(id, timestamp),
+      ),
+      ...stagingIds.map((id) =>
+        this.db
+          .prepare(
+            `DELETE FROM content_version
+              WHERE id = ? AND status <> 'ready'
+                AND NOT EXISTS (SELECT 1 FROM content c WHERE c.active_version_id = content_version.id)`,
+          )
+          .bind(id),
+      ),
+    ];
+    if (statements.length > 0) await this.db.batch(statements);
+    return { purgedVersions: supersededIds.length, purgedStagingVersions: stagingIds.length };
   }
 
   async createShareLink(input: {

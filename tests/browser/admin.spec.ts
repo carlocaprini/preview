@@ -19,7 +19,6 @@ const detail = {
   activeVersionId: "version-3",
   versions: [
     { id: "version-3", sequence: 3, status: "ready", sourceFormat: "zip", totalBytes: 481_234, createdAt: content.updatedAt, activatedAt: content.updatedAt },
-    { id: "version-2", sequence: 2, status: "ready", sourceFormat: "html", totalBytes: 81_234, createdAt: "2026-10-24T18:00:00.000Z", activatedAt: "2026-10-24T18:00:00.000Z" },
   ],
   links: [
     { id: "link-1", label: "Client review", url: "https://preview.example/s/token", createdAt: content.updatedAt, expiresAt: "2026-11-02T18:00:00.000Z", revokedAt: null, state: "active", meaningfulViews: 14, activeVisibleMs: 196_000, lastViewAt: content.updatedAt },
@@ -45,13 +44,14 @@ test("library presents private content and aggregate signals", async ({ page }, 
   await page.screenshot({ path: testInfo.outputPath("library.png"), fullPage: true });
 });
 
-test("content detail exposes versions and reversible share controls", async ({ page }, testInfo) => {
+test("content detail exposes only the current update and reversible share controls", async ({ page }, testInfo) => {
   await mockAdmin(page);
   await page.goto("/admin/contents/content-1");
   await expect(page.getByRole("heading", { name: "Spatial product narrative" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Share links" })).toBeVisible();
   await expect(page.getByText("Client review")).toBeVisible();
-  await expect(page.getByText("Version 3", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Update HTML" })).toBeVisible();
+  await expect(page.getByText("Versions", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Revoke" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("content-detail.png"), fullPage: true });
 });

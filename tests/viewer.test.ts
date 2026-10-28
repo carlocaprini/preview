@@ -43,6 +43,7 @@ class SqliteD1 {
       "0002_public_snapshots.sql",
       "0003_measurement_receipts.sql",
       "0004_d1_asset_storage.sql",
+      "0005_latest_only_retention.sql",
     ]) {
       const path = fileURLToPath(new URL(`../migrations/${name}`, import.meta.url));
       this.raw.exec(readFileSync(path, "utf8"));
