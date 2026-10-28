@@ -8,18 +8,43 @@ test("homepage uses the compact Preview header and canonical website actions", a
   await expect(page.getByRole("link", { name: "Explore work" })).toHaveAttribute("href", "https://carlocaprini.com/work/");
   await expect(page.getByRole("link", { name: "Explore thinking" })).toHaveAttribute("href", "https://carlocaprini.com/thinking/");
   await expect(page.getByRole("link", { name: "Get in touch" })).toHaveAttribute("href", "https://carlocaprini.com/#contact");
+  await page.keyboard.press("Tab");
+  await expect(header.getByRole("link", { name: "Preview" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Explore work" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Explore thinking" })).toBeFocused();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
-test("public shell is generic, branded, and contains a constrained content frame", async ({ page }) => {
+test("public shell keeps attribution and full-height light and dark content frames", async ({ page }, testInfo) => {
   await page.route("**/api/public/measure", (route) => route.fulfill({ json: { recorded: true } }));
-  await page.goto("/viewer");
-  const header = page.locator("header.top");
-  await expect(header.getByRole("link", { name: "Preview" })).toBeVisible();
-  await expect(header.getByText("Shared preview")).toHaveCount(0);
-  const frame = page.locator("iframe");
-  await expect(frame).toHaveAttribute("referrerpolicy", "no-referrer");
-  await expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-modals allow-popups");
-  await expect(frame).not.toHaveAttribute("sandbox", /allow-top-navigation/u);
+  for (const theme of ["light", "dark"] as const) {
+    await page.goto(`/viewer?theme=${theme}`);
+    const header = page.locator("header.top");
+    const frame = page.locator("iframe");
+    const attribution = page.locator(".viewer-attribution");
+    await expect(header.getByRole("link", { name: "Preview" })).toBeVisible();
+    await expect(header.getByText("Shared preview")).toHaveCount(0);
+    await expect(attribution.getByRole("link", { name: "Carlo Caprini" })).toHaveAttribute("href", "https://carlocaprini.com");
+    await expect(attribution.getByRole("link", { name: "Carlo Caprini" })).toHaveAttribute("target", "_blank");
+    await expect(frame).toHaveAttribute("referrerpolicy", "no-referrer");
+    await expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-modals allow-popups");
+    await expect(frame).not.toHaveAttribute("sandbox", /allow-top-navigation/u);
+    await expect(page.frameLocator("iframe").locator("html")).toHaveAttribute("data-theme", theme);
+    const [headerBox, frameBox, attributionBox] = await Promise.all([
+      header.boundingBox(),
+      frame.boundingBox(),
+      attribution.boundingBox(),
+    ]);
+    if (!headerBox || !frameBox || !attributionBox) throw new Error("Viewer regions must have measurable layout boxes");
+    expect(headerBox.height).toBe(56);
+    expect(frameBox.height).toBeGreaterThan(400);
+    expect(frameBox.y).toBe(headerBox.y + headerBox.height);
+    expect(attributionBox.y).toBe(frameBox.y + frameBox.height);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`viewer-${theme}.png`), fullPage: true });
+  }
   await expect(page).toHaveTitle("Shared preview — Carlo Caprini");
 });
 
