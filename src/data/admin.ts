@@ -48,13 +48,13 @@ export class D1AdminRepository {
       .first<Row>();
     if (!content) return null;
 
-    const [versions, links, aggregates] = await Promise.all([
+    const [currentVersion, links, aggregates] = await Promise.all([
       this.db
         .prepare(
           `SELECT id,sequence,status,source_format,total_bytes,created_at,activated_at
-             FROM content_version WHERE content_id = ? ORDER BY sequence DESC`,
+             FROM content_version WHERE id = ?`,
         )
-        .bind(contentId)
+        .bind(content.active_version_id)
         .all<Row>(),
       this.db
         .prepare(
@@ -86,7 +86,7 @@ export class D1AdminRepository {
       createdAt: String(content.created_at),
       updatedAt: String(content.updated_at),
       activeVersionId: content.active_version_id === null ? null : String(content.active_version_id),
-      versions: versions.results.map((row) => ({
+      versions: currentVersion.results.map((row) => ({
         id: String(row.id),
         sequence: Number(row.sequence),
         status: String(row.status),

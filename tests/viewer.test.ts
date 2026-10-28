@@ -43,6 +43,7 @@ class SqliteD1 {
       "0002_public_snapshots.sql",
       "0003_measurement_receipts.sql",
       "0004_d1_asset_storage.sql",
+      "0005_latest_only_retention.sql",
     ]) {
       const path = fileURLToPath(new URL(`../migrations/${name}`, import.meta.url));
       this.raw.exec(readFileSync(path, "utf8"));
@@ -179,6 +180,11 @@ describe("public and owner viewing", () => {
 
     const pinned = await handleRequest(new Request(oldSource), env, anonymous);
     expect(await pinned.text()).toBe("<h1>First</h1>");
+
+    database.raw
+      .prepare("UPDATE content_version SET purge_after = ? WHERE id = ?")
+      .run("2000-01-01T00:00:00.000Z", first.versionId);
+    expect((await handleRequest(new Request(oldSource), env, anonymous)).status).toBe(404);
 
     const freshShell = await handleRequest(new Request(link.url), env, anonymous);
     const freshSource = iframeSource(await freshShell.text());

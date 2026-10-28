@@ -1,4 +1,4 @@
-import { bindings, defineConfig } from "cf/config";
+import { bindings, defineConfig, triggers } from "cf/config";
 
 export default defineConfig(({ mode }) => ({
   worker: {
@@ -29,6 +29,7 @@ export default defineConfig(({ mode }) => ({
         : ["preview.carlocaprini.com", "content.preview.carlocaprini.com"],
     workersDev: false,
     previewUrls: false,
+    triggers: [triggers.scheduled({ schedule: "17 * * * *" })],
     observability: {
       enabled: true,
       redactQueryString: true,
