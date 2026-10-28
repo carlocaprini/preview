@@ -42,6 +42,9 @@ test("library presents private content and aggregate signals", async ({ page }, 
   await expect(page.getByRole("heading", { name: "Library" })).toBeVisible();
   await expect(page.getByRole("link", { name: /Spatial product narrative/ })).toBeVisible();
   await expect(page.getByText("14")).toBeVisible();
+  await expect(page.locator(".content-row")).toHaveCount(1);
+  await expect(page.getByText("Owner workspace")).toHaveCount(0);
+  await expect(page.locator("header.top").getByRole("button", { name: "Log out" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("library.png"), fullPage: true });
 });
 
@@ -51,8 +54,12 @@ test("content detail exposes only the current update and reversible share contro
   await expect(page.getByRole("heading", { name: "Spatial product narrative" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Share links" })).toBeVisible();
   await expect(page.getByText("Client review")).toBeVisible();
+  await expect(page.getByText(/ZIP · Updated/u)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Current HTML" })).toHaveCount(0);
+  await expect(page.getByText("Version 3", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("Version 2", { exact: false })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Update HTML" })).toBeVisible();
-  await expect(page.getByText("Versions", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Edit expiry" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Revoke" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Upload PDF" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("content-detail.png"), fullPage: true });
@@ -85,6 +92,39 @@ test("PDF companion upload stages bytes and commits before becoming current", as
     "PUT /api/admin/pdf/uploads/pdf-upload/data",
     "POST /api/admin/pdf/uploads/pdf-upload/commit",
   ]);
+});
+
+test("long titles and share labels remain usable without viewport overflow", async ({ page }, testInfo) => {
+  const longTitle = "A deliberately long product narrative title with InternationalisationAndUnbrokenContextForNarrowScreens";
+  const longLabel = "Executive stakeholder review — InternationalisationAndUnbrokenRecipientContext";
+  const longContent = { ...content, title: longTitle };
+  const longDetail = { ...detail, title: longTitle, links: [{ ...detail.links[0], label: longLabel }] };
+  await page.route("**/api/admin/contents", (route) => route.fulfill({ json: { contents: [longContent] } }));
+  await page.route("**/api/admin/contents/content-1", (route) => route.fulfill({ json: longDetail }));
+
+  await page.goto("/admin");
+  await expect(page.getByRole("link", { name: new RegExp(longTitle, "u") })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+  await page.goto("/admin/contents/content-1");
+  await expect(page.getByRole("heading", { name: longTitle })).toBeVisible();
+  await expect(page.getByText(longLabel)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+  await page.keyboard.press("Tab");
+  await expect(page.locator("header.top").getByRole("link", { name: "Preview" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.locator("header.top").getByRole("button", { name: "Log out" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Library" })).toBeFocused();
+
+  if (testInfo.project.name === "mobile-chromium") {
+    for (const control of await page.locator(".button,.text-button").all()) {
+      const box = await control.boundingBox();
+      expect(box?.height).toBeGreaterThanOrEqual(40);
+    }
+  }
+  await page.screenshot({ path: testInfo.outputPath("long-content.png"), fullPage: true });
 });
 
 test("single HTML upload stages bytes and commits before navigation", async ({ page }) => {

@@ -134,11 +134,20 @@ createServer(async (request, response) => {
   if (url.pathname === "/assets/login.js") return send(response, loginScript, "text/javascript; charset=utf-8");
   if (url.pathname === "/assets/viewer.js") return send(response, viewerScript, "text/javascript; charset=utf-8");
   if (url.pathname === "/assets/fflate.js") return send(response, fflateScript, "text/javascript; charset=utf-8");
-  if (url.pathname === "/content") return send(response, "<!doctype html><h1>Shared prototype</h1>", "text/html; charset=utf-8");
-  if (url.pathname === "/viewer") {
+  if (url.pathname === "/content") {
+    const dark = url.searchParams.get("theme") === "dark";
+    const palette = dark ? "color-scheme:dark;background:#0b1220;color:#f5f7fa" : "color-scheme:light;background:#fff;color:#101828";
     return send(
       response,
-      viewerPage(`http://127.0.0.1:${port}/content`, { token: "test-token", snapshotId: "snapshot" }),
+      `<!doctype html><html data-theme="${dark ? "dark" : "light"}"><head><style>html,body{margin:0;min-height:100%;${palette}}main{padding:2rem}</style></head><body><main><h1>Shared prototype</h1><p>${dark ? "Dark" : "Light"} sample</p></main></body></html>`,
+      "text/html; charset=utf-8",
+    );
+  }
+  if (url.pathname === "/viewer") {
+    const theme = url.searchParams.get("theme") === "dark" ? "dark" : "light";
+    return send(
+      response,
+      viewerPage(`http://127.0.0.1:${port}/content?theme=${theme}`, { token: "test-token", snapshotId: "snapshot" }),
       "text/html; charset=utf-8",
     );
   }

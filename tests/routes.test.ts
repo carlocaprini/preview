@@ -31,7 +31,11 @@ describe("origin and authentication routing", () => {
   it("serves the branded public homepage without exposing content", async () => {
     const response = await handleRequest(new Request("https://app.test/"), env, context);
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain("Ideas, experiments and work worth sharing.");
+    const body = await response.text();
+    expect(body).toContain("Ideas, experiments and work worth sharing.");
+    expect(body).toContain('href="https://carlocaprini.com/work/">Explore work</a>');
+    expect(body).toContain('href="https://carlocaprini.com/thinking/">Explore thinking</a>');
+    expect(body).not.toContain(">Carlo Caprini</a>");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
   });
 
