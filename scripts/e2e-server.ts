@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { adminPage, homePage, loginPage, unavailablePage, viewerPage } from "../src/ui/pages.ts";
@@ -51,12 +51,7 @@ class SqliteD1 {
   readonly raw = new DatabaseSync(":memory:");
 
   constructor() {
-    for (const name of [
-      "0001_initial.sql",
-      "0002_public_snapshots.sql",
-      "0003_measurement_receipts.sql",
-      "0004_d1_asset_storage.sql",
-    ]) {
+    for (const name of readdirSync(`${root}/migrations`).filter((entry) => /^\d{4}_.+\.sql$/u.test(entry)).sort()) {
       this.raw.exec(readFileSync(`${root}/migrations/${name}`, "utf8"));
     }
   }
