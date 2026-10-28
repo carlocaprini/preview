@@ -15,7 +15,7 @@ function post(kind, visibleMs = 0) {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ token, snapshotId, receiptId, kind, visibleMs }),
-    credentials: "omit",
+    credentials: "same-origin",
     keepalive: true,
   }).catch(() => {});
 }

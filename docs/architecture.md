@@ -41,6 +41,8 @@ Already downloaded bytes cannot be revoked from a browser. Revocation and expiry
 
 V1 stores daily counts of meaningful displayed views, last-view timestamps, and bounded visible-time totals. A meaningful view requires the iframe to load and remain in a visible parent document for two seconds, so passive URL scanners do not count. Visible time is reported in bounded chunks only while the parent document is visible.
 
+The trusted application-origin shell sends measurement requests with same-origin credentials. On every event the Worker verifies the existing signed owner session; a valid owner session may use the public link normally but produces no measurement receipt, daily aggregate update, or last-view timestamp. Missing, expired, or forged sessions retain the ordinary anonymous measurement behavior. This exclusion identifies only a valid authenticated browser session, not the owner's identity outside that session.
+
 It stores no raw IP address, fingerprint, cookie identifier, recipient identity, per-session history, click events, or individual timeline. Random measurement receipts are kept for at most 24 hours solely to make retries idempotent; they contain no identity or event metadata and are deleted opportunistically. A link label is an owner note, not a verified reader.
 
 The parent can measure its own visibility and iframe load. It cannot truthfully observe arbitrary cross-origin document scroll position without injecting cooperative code. V1 therefore does not report scroll or section depth. This preserves the approved requirement to prefer fewer honest measures over false precision.
