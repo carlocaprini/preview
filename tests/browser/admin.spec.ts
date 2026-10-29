@@ -13,6 +13,13 @@ const content = {
   activeVisibleMs: 196_000,
 };
 
+const history = Array.from({ length: 30 }, (_, index) => ({
+  day: new Date(Date.UTC(2026, 8, 27 + index)).toISOString().slice(0, 10),
+  meaningfulViews: index === 0 ? 1 : index === 15 ? 7 : index === 29 ? 3 : 0,
+  activeVisibleMs: index === 15 ? 42_000 : 0,
+  pdfDownloadsServed: index === 29 ? 1 : 0,
+}));
+
 const detail = {
   ...content,
   createdAt: "2026-10-20T18:00:00.000Z",
@@ -24,7 +31,8 @@ const detail = {
     { id: "link-1", label: "Client review", url: "https://preview.example/s/token", createdAt: content.updatedAt, expiresAt: "2026-11-02T18:00:00.000Z", revokedAt: null, state: "active", meaningfulViews: 14, activeVisibleMs: 196_000, lastViewAt: content.updatedAt, pdfDownloadsServed: 0, lastPdfDownloadAt: null },
     { id: "link-2", label: "Old review", url: "https://preview.example/s/old", createdAt: content.updatedAt, expiresAt: null, revokedAt: content.updatedAt, state: "revoked", meaningfulViews: 0, activeVisibleMs: 0, lastViewAt: null, pdfDownloadsServed: 0, lastPdfDownloadAt: null },
   ],
-  aggregates: [],
+  aggregates: history,
+  aggregateRange: { startDay: "2026-09-27", endDay: "2026-10-26", timezone: "UTC" },
   pdfCompanion: { state: "none" },
 };
 
@@ -62,7 +70,31 @@ test("content detail exposes only the current update and reversible share contro
   await expect(page.getByRole("button", { name: "Edit expiry" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Revoke" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Upload PDF" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Views over time" })).toBeVisible();
+  await expect(page.getByText("Last 30 days · UTC")).toBeVisible();
+  await expect(page.locator(".history-bar")).toHaveCount(30);
+  await expect(page.locator('[data-day="2026-10-12"] title')).toHaveText("2026-10-12: 7 meaningful views");
+  await expect(page.locator('.history-chart[role="img"]')).toHaveAttribute("aria-label", /30-day total 11; peak 7/u);
+  await expect(page.locator(".history-chart [tabindex]")).toHaveCount(0);
+  const historyBox = await page.locator(".history-panel").boundingBox();
+  const linksBox = await page.getByRole("heading", { name: "Share links" }).boundingBox();
+  expect(historyBox?.y).toBeLessThan(linksBox?.y ?? 0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("content-detail.png"), fullPage: true });
+});
+
+test("content detail gives an honest empty state when all 30 UTC days are zero", async ({ page }) => {
+  await page.route("**/api/admin/contents/content-1", (route) => route.fulfill({
+    json: {
+      ...detail,
+      aggregates: history.map((entry) => ({ ...entry, meaningfulViews: 0, activeVisibleMs: 0, pdfDownloadsServed: 0 })),
+    },
+  }));
+
+  await page.goto("/admin/contents/content-1");
+  await expect(page.getByRole("heading", { name: "Views over time" })).toBeVisible();
+  await expect(page.getByText("No views in the last 30 days")).toBeVisible();
+  await expect(page.locator(".history-bar")).toHaveCount(0);
 });
 
 test("PDF companion upload stages bytes and commits before becoming current", async ({ page }) => {

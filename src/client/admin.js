@@ -21,6 +21,33 @@ function formatDate(value) {
   return value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "—";
 }
 
+function viewsHistory(aggregates) {
+  const points = (Array.isArray(aggregates) ? aggregates : []).slice(-30).flatMap((entry) => {
+    const day = typeof entry?.day === "string" && /^\d{4}-\d{2}-\d{2}$/u.test(entry.day) ? entry.day : null;
+    const value = Number(entry?.meaningfulViews);
+    return day ? [{ day, views: Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0 }] : [];
+  });
+  const total = points.reduce((sum, point) => sum + point.views, 0);
+  const peak = Math.max(0, ...points.map((point) => point.views));
+  const summary = `<p class="sr-only">30-day total: ${total} meaningful view${total === 1 ? "" : "s"}. Daily UTC values: ${points.map((point) => `${escapeHtml(point.day)}, ${point.views}`).join("; ")}.</p>`;
+  const heading = '<header class="history-head"><div><h2 id="views-history-title">Views over time</h2><span>Last 30 days · UTC</span></div></header>';
+
+  if (!points.length || peak === 0) {
+    return `<section class="history-panel" aria-labelledby="views-history-title">${heading}<p class="history-empty">No views in the last 30 days</p>${summary}</section>`;
+  }
+
+  const bars = points.map((point, index) => {
+    const height = (point.views / peak) * 76;
+    return `<rect class="history-bar" data-day="${escapeHtml(point.day)}" data-views="${point.views}" x="${index * 10 + 2}" y="${86 - height}" width="6" height="${height}"><title>${escapeHtml(point.day)}: ${point.views} meaningful view${point.views === 1 ? "" : "s"}</title></rect>`;
+  }).join("");
+  const labels = [0, Math.floor((points.length - 1) / 2), points.length - 1].map((index, labelIndex) => {
+    const anchor = labelIndex === 0 ? "start" : labelIndex === 2 ? "end" : "middle";
+    const x = labelIndex === 0 ? 2 : labelIndex === 2 ? 298 : 150;
+    return `<text x="${x}" y="106" text-anchor="${anchor}">${escapeHtml(points[index].day.slice(5))}</text>`;
+  }).join("");
+  return `<section class="history-panel" aria-labelledby="views-history-title">${heading}<svg class="history-chart" viewBox="0 0 300 112" role="img" aria-label="Meaningful views by UTC day. 30-day total ${total}; peak ${peak}."><line x1="2" x2="298" y1="10" y2="10"></line><line x1="2" x2="298" y1="48" y2="48"></line><line x1="2" x2="298" y1="86" y2="86"></line>${bars}${labels}</svg>${summary}</section>`;
+}
+
 async function api(path, options) {
   const response = await fetch(path, options);
   if (response.status === 401) {
@@ -191,7 +218,7 @@ async function renderDetail() {
   const contentMeta = active
     ? `${escapeHtml(active.sourceFormat.toUpperCase())} · Updated ${formatDate(item.updatedAt)}`
     : `Updated ${formatDate(item.updatedAt)}`;
-  root.innerHTML = `<a class="back" href="/admin">← Library</a><section class="detail-head"><div><h1>${escapeHtml(item.title)}</h1><p class="detail-meta">${contentMeta}</p></div><div class="actions"><a class="button secondary" href="/api/admin/contents/${item.id}/preview" target="_blank" rel="noopener">Open preview</a><button class="button secondary" data-action="version">Update HTML</button><button class="button" data-action="link">Create link</button></div></section><section class="metric-row" aria-label="Content engagement"><div><span>Meaningful views</span><strong>${views}</strong></div><div><span>Visible time</span><strong>${formatDuration(visibleTime)}</strong></div><div><span>PDF downloads</span><strong>${pdfDownloads}</strong></div><div><span>Active links</span><strong>${activeLinks}</strong></div></section><div class="detail-grid"><section class="panel"><header><h2>Share links</h2></header>${item.links.length ? `<div class="link-list">${item.links.map((link) => `<article class="link-row"><div><div class="link-title"><strong>${escapeHtml(link.label)}</strong><span class="status ${link.state}">${link.state}</span></div><small>${link.meaningfulViews} views · ${formatDuration(link.activeVisibleMs)} visible · ${link.pdfDownloadsServed} PDF downloads · ${link.expiresAt ? `Expires ${formatDate(link.expiresAt)}` : "No expiry"}</small></div><div class="row-actions"><button class="text-button" data-action="copy" data-url="${escapeHtml(link.url)}">Copy</button>${link.state !== "revoked" ? `<button class="text-button" data-action="expiry" data-id="${link.id}" data-expiry="${escapeHtml(link.expiresAt || "")}">Edit expiry</button><button class="text-button danger" data-action="revoke" data-id="${link.id}">Revoke</button>` : ""}</div></article>`).join("")}</div>` : '<div class="panel-empty">No links yet. This content is private.</div>'}</section>${pdfPanel(item)}</div>`;
+  root.innerHTML = `<a class="back" href="/admin">← Library</a><section class="detail-head"><div><h1>${escapeHtml(item.title)}</h1><p class="detail-meta">${contentMeta}</p></div><div class="actions"><a class="button secondary" href="/api/admin/contents/${item.id}/preview" target="_blank" rel="noopener">Open preview</a><button class="button secondary" data-action="version">Update HTML</button><button class="button" data-action="link">Create link</button></div></section><section class="metric-row" aria-label="Content engagement"><div><span>Meaningful views</span><strong>${views}</strong></div><div><span>Visible time</span><strong>${formatDuration(visibleTime)}</strong></div><div><span>PDF downloads</span><strong>${pdfDownloads}</strong></div><div><span>Active links</span><strong>${activeLinks}</strong></div></section>${viewsHistory(item.aggregates)}<div class="detail-grid"><section class="panel"><header><h2>Share links</h2></header>${item.links.length ? `<div class="link-list">${item.links.map((link) => `<article class="link-row"><div><div class="link-title"><strong>${escapeHtml(link.label)}</strong><span class="status ${link.state}">${link.state}</span></div><small>${link.meaningfulViews} views · ${formatDuration(link.activeVisibleMs)} visible · ${link.pdfDownloadsServed} PDF downloads · ${link.expiresAt ? `Expires ${formatDate(link.expiresAt)}` : "No expiry"}</small></div><div class="row-actions"><button class="text-button" data-action="copy" data-url="${escapeHtml(link.url)}">Copy</button>${link.state !== "revoked" ? `<button class="text-button" data-action="expiry" data-id="${link.id}" data-expiry="${escapeHtml(link.expiresAt || "")}">Edit expiry</button><button class="text-button danger" data-action="revoke" data-id="${link.id}">Revoke</button>` : ""}</div></article>`).join("")}</div>` : '<div class="panel-empty">No links yet. This content is private.</div>'}</section>${pdfPanel(item)}</div>`;
 }
 
 root.addEventListener("click", async (event) => {
