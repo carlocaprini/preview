@@ -19,15 +19,26 @@ test("homepage uses the compact Preview header and canonical website actions", a
 
 test("public shell keeps attribution and full-height light and dark content frames", async ({ page }, testInfo) => {
   await page.route("**/api/public/measure", (route) => route.fulfill({ json: { recorded: true } }));
-  for (const theme of ["light", "dark"] as const) {
-    await page.goto(`/viewer?theme=${theme}`);
+  for (const { theme, pdf } of [{ theme: "light", pdf: false }, { theme: "dark", pdf: true }] as const) {
+    await page.goto(`/viewer?theme=${theme}&pdf=${pdf ? "1" : "0"}`);
     const header = page.locator("header.top");
     const frame = page.locator("iframe");
     const attribution = page.locator(".viewer-attribution");
     await expect(header.getByRole("link", { name: "Preview" })).toBeVisible();
     await expect(header.getByText("Shared preview")).toHaveCount(0);
-    await expect(attribution.getByRole("link", { name: "Carlo Caprini" })).toHaveAttribute("href", "https://carlocaprini.com");
-    await expect(attribution.getByRole("link", { name: "Carlo Caprini" })).toHaveAttribute("target", "_blank");
+    await expect(header.getByRole("link", { name: "Download PDF" })).toHaveCount(pdf ? 1 : 0);
+    await expect(attribution).toContainText(/Preview built by\s*Carlo Caprini\s*·\s*Explore work/u);
+    await expect(attribution.getByText("Shared by Carlo Caprini")).toHaveCount(0);
+    const builder = attribution.getByRole("link", { name: "Carlo Caprini" });
+    const work = attribution.getByRole("link", { name: "Explore work" });
+    await expect(builder).toHaveAttribute("href", "https://carlocaprini.com/");
+    await expect(work).toHaveAttribute("href", "https://carlocaprini.com/work/");
+    for (const link of [builder, work]) {
+      await expect(link).toHaveAttribute("target", "_blank");
+      await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+      await link.focus();
+      await expect(link).toBeFocused();
+    }
     await expect(frame).toHaveAttribute("referrerpolicy", "no-referrer");
     await expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-modals allow-popups");
     await expect(frame).not.toHaveAttribute("sandbox", /allow-top-navigation/u);
@@ -42,6 +53,11 @@ test("public shell keeps attribution and full-height light and dark content fram
     expect(frameBox.height).toBeGreaterThan(400);
     expect(frameBox.y).toBe(headerBox.y + headerBox.height);
     expect(attributionBox.y).toBe(frameBox.y + frameBox.height);
+    expect(attributionBox.height).toBeGreaterThanOrEqual(44);
+    for (const link of [builder, work]) {
+      const box = await link.boundingBox();
+      expect(box?.height).toBeGreaterThanOrEqual(40);
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`viewer-${theme}.png`), fullPage: true });
   }
