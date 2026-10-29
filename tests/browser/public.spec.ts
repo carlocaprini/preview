@@ -19,15 +19,24 @@ test("homepage uses the compact Preview header and canonical website actions", a
 
 test("public shell keeps attribution and full-height light and dark content frames", async ({ page }, testInfo) => {
   await page.route("**/api/public/measure", (route) => route.fulfill({ json: { recorded: true } }));
-  for (const theme of ["light", "dark"] as const) {
-    await page.goto(`/viewer?theme=${theme}`);
+  for (const { theme, pdf } of [{ theme: "light", pdf: false }, { theme: "dark", pdf: true }] as const) {
+    await page.goto(`/viewer?theme=${theme}&pdf=${pdf ? "1" : "0"}`);
     const header = page.locator("header.top");
     const frame = page.locator("iframe");
     const attribution = page.locator(".viewer-attribution");
     await expect(header.getByRole("link", { name: "Preview" })).toBeVisible();
     await expect(header.getByText("Shared preview")).toHaveCount(0);
-    await expect(attribution.getByRole("link", { name: "Carlo Caprini" })).toHaveAttribute("href", "https://carlocaprini.com");
-    await expect(attribution.getByRole("link", { name: "Carlo Caprini" })).toHaveAttribute("target", "_blank");
+    await expect(header.getByRole("link", { name: "Download PDF" })).toHaveCount(pdf ? 1 : 0);
+    await expect(attribution).toContainText(/Preview built by\s*Carlo Caprini\s*·\s*Explore work/u);
+    await expect(attribution.getByText("Shared by Carlo Caprini")).toHaveCount(0);
+    const builder = attribution.getByRole("link", { name: "Carlo Caprini" });
+    const work = attribution.getByRole("link", { name: "Explore work" });
+    await expect(builder).toHaveAttribute("href", "https://carlocaprini.com/");
+    await expect(work).toHaveAttribute("href", "https://carlocaprini.com/work/");
+    for (const link of [builder, work]) {
+      await expect(link).toHaveAttribute("target", "_blank");
+      await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    }
     await expect(frame).toHaveAttribute("referrerpolicy", "no-referrer");
     await expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-modals allow-popups");
     await expect(frame).not.toHaveAttribute("sandbox", /allow-top-navigation/u);
@@ -42,8 +51,42 @@ test("public shell keeps attribution and full-height light and dark content fram
     expect(frameBox.height).toBeGreaterThan(400);
     expect(frameBox.y).toBe(headerBox.y + headerBox.height);
     expect(attributionBox.y).toBe(frameBox.y + frameBox.height);
+    expect(attributionBox.height).toBeGreaterThanOrEqual(44);
+    const assertContainedInsetFocus = async (link: typeof builder) => {
+      const focus = await link.evaluate((element) => {
+        const linkBox = element.getBoundingClientRect();
+        const footerBox = element.closest(".viewer-attribution")?.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+          boxShadow: style.boxShadow,
+          link: { left: linkBox.left, right: linkBox.right, top: linkBox.top, bottom: linkBox.bottom, height: linkBox.height },
+          footer: footerBox ? { left: footerBox.left, right: footerBox.right, top: footerBox.top, bottom: footerBox.bottom } : null,
+          viewport: { width: innerWidth, height: innerHeight },
+        };
+      });
+      expect(focus.boxShadow).toContain("inset");
+      expect(focus.link.height).toBeGreaterThanOrEqual(40);
+      expect(focus.footer).not.toBeNull();
+      if (!focus.footer) throw new Error("Focused footer link must belong to the viewer footer");
+      expect(focus.link.left).toBeGreaterThanOrEqual(focus.footer.left);
+      expect(focus.link.right).toBeLessThanOrEqual(focus.footer.right);
+      expect(focus.link.top).toBeGreaterThanOrEqual(focus.footer.top);
+      expect(focus.link.bottom).toBeLessThanOrEqual(focus.footer.bottom);
+      expect(focus.link.left).toBeGreaterThanOrEqual(0);
+      expect(focus.link.right).toBeLessThanOrEqual(focus.viewport.width);
+      expect(focus.link.top).toBeGreaterThanOrEqual(0);
+      expect(focus.link.bottom).toBeLessThanOrEqual(focus.viewport.height);
+    };
+    await work.focus();
+    await page.keyboard.press("Shift+Tab");
+    await expect(builder).toBeFocused();
+    await assertContainedInsetFocus(builder);
+    await page.screenshot({ path: testInfo.outputPath(`viewer-${theme}-builder-focus.png`), fullPage: true });
+    await page.keyboard.press("Tab");
+    await expect(work).toBeFocused();
+    await assertContainedInsetFocus(work);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-    await page.screenshot({ path: testInfo.outputPath(`viewer-${theme}.png`), fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath(`viewer-${theme}-work-focus.png`), fullPage: true });
   }
   await expect(page).toHaveTitle("Shared preview — Carlo Caprini");
 });

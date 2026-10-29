@@ -205,6 +205,10 @@ describe("public and owner viewing", () => {
     expect(page).not.toContain("Confidential roadmap");
     expect(page).not.toContain("Board");
     expect(page).not.toMatch(/Version\s+1/iu);
+    expect(page).toContain("Preview built by&nbsp;");
+    expect(page).toContain('href="https://carlocaprini.com/" target="_blank" rel="noopener noreferrer">Carlo Caprini</a>');
+    expect(page).toContain('href="https://carlocaprini.com/work/" target="_blank" rel="noopener noreferrer">Explore work</a>');
+    expect(page).not.toContain("Shared by&nbsp;");
     expect(page).toContain('sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"');
     expect(page).not.toContain("allow-top-navigation");
     expect(shell.headers.get("cache-control")).toContain("no-store");

@@ -145,9 +145,10 @@ createServer(async (request, response) => {
   }
   if (url.pathname === "/viewer") {
     const theme = url.searchParams.get("theme") === "dark" ? "dark" : "light";
+    const pdfUrl = url.searchParams.get("pdf") === "1" ? "/s/test-token/pdf" : undefined;
     return send(
       response,
-      viewerPage(`http://127.0.0.1:${port}/content?theme=${theme}`, { token: "test-token", snapshotId: "snapshot" }),
+      viewerPage(`http://127.0.0.1:${port}/content?theme=${theme}`, { token: "test-token", snapshotId: "snapshot", pdfUrl }),
       "text/html; charset=utf-8",
     );
   }
