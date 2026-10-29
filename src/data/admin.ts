@@ -3,6 +3,22 @@ import { D1PdfRepository } from "./pdf.ts";
 
 type Row = Record<string, string | number | null>;
 
+const UTC_DAY_MS = 24 * 60 * 60 * 1000;
+const HISTORY_DAYS = 30;
+
+function utcDay(timestamp: number): string {
+  return new Date(timestamp).toISOString().slice(0, 10);
+}
+
+function historyRange(now: Date): { days: string[]; endExclusive: string } {
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const start = today - (HISTORY_DAYS - 1) * UTC_DAY_MS;
+  return {
+    days: Array.from({ length: HISTORY_DAYS }, (_, index) => utcDay(start + index * UTC_DAY_MS)),
+    endExclusive: utcDay(today + UTC_DAY_MS),
+  };
+}
+
 export interface ContentSummary {
   id: string;
   title: string;
@@ -51,6 +67,8 @@ export class D1AdminRepository {
       .first<Row>();
     if (!content) return null;
 
+    const range = historyRange(now);
+
     const [currentVersion, links, aggregates, pdfCompanion] = await Promise.all([
       this.db
         .prepare(
@@ -80,9 +98,10 @@ export class D1AdminRepository {
           `SELECT da.day,SUM(da.meaningful_views) AS meaningful_views,SUM(da.active_visible_ms) AS active_visible_ms,
                   SUM(da.pdf_downloads_served) AS pdf_downloads_served
              FROM daily_aggregate da JOIN share_link sl ON sl.id = da.share_link_id
-            WHERE sl.content_id = ? GROUP BY da.day ORDER BY da.day DESC LIMIT 30`,
+            WHERE sl.content_id = ? AND da.day >= ? AND da.day < ?
+         GROUP BY da.day ORDER BY da.day ASC`,
         )
-        .bind(contentId)
+        .bind(contentId, range.days[0], range.endExclusive)
         .all<Row>(),
       new D1PdfRepository(this.db).stateForContent(contentId),
     ]);
@@ -123,12 +142,19 @@ export class D1AdminRepository {
           lastPdfDownloadAt: row.last_pdf_download_at === null ? null : String(row.last_pdf_download_at),
         })),
       ),
-      aggregates: aggregates.results.map((row) => ({
-        day: String(row.day),
-        meaningfulViews: Number(row.meaningful_views),
-        activeVisibleMs: Number(row.active_visible_ms),
-        pdfDownloadsServed: Number(row.pdf_downloads_served),
-      })),
+      aggregates: (() => {
+        const recorded = new Map(aggregates.results.map((row) => [String(row.day), row]));
+        return range.days.map((day) => {
+          const row = recorded.get(day);
+          return {
+            day,
+            meaningfulViews: Number(row?.meaningful_views ?? 0),
+            activeVisibleMs: Number(row?.active_visible_ms ?? 0),
+            pdfDownloadsServed: Number(row?.pdf_downloads_served ?? 0),
+          };
+        });
+      })(),
+      aggregateRange: { startDay: range.days[0], endDay: range.days[HISTORY_DAYS - 1], timezone: "UTC" },
       pdfCompanion,
     };
   }
