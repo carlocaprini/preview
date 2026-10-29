@@ -79,6 +79,12 @@ test("content detail exposes only the current update and reversible share contro
   const historyBox = await page.locator(".history-panel").boundingBox();
   const linksBox = await page.getByRole("heading", { name: "Share links" }).boundingBox();
   expect(historyBox?.y).toBeLessThan(linksBox?.y ?? 0);
+  if (testInfo.project.name === "chromium") {
+    expect(historyBox?.width).toBeLessThanOrEqual(360);
+  } else {
+    const viewportWidth = page.viewportSize()?.width ?? 0;
+    expect(historyBox?.width).toBeGreaterThanOrEqual(viewportWidth - 48);
+  }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("content-detail.png"), fullPage: true });
 });
