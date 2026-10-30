@@ -48,6 +48,32 @@ export interface ContentListPage {
   nextCursor: string | null;
 }
 
+export interface ContentMetadata {
+  contentId: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  publication:
+    | { state: "unpublished"; activeVersionId: null; sourceFormat: null; fileCount: 0; totalBytes: 0; activatedAt: null }
+    | {
+        state: "ready";
+        activeVersionId: string;
+        sourceFormat: string;
+        fileCount: number;
+        totalBytes: number;
+        activatedAt: string;
+      };
+  sharing: { totalLinkCount: number; activeLinkCount: number };
+  pdfCompanion: {
+    state: "none" | "current" | "outdated";
+    pdfId?: string;
+    fileName?: string;
+    size?: number;
+    uploadedAt?: string;
+    approvedVersionId?: string | null;
+  };
+}
+
 interface ContentCursor {
   v: 1;
   scope: "contents";
@@ -139,6 +165,52 @@ export class D1AdminRepository {
         result.results.length > limit && last
           ? encodeCursor({ v: 1, scope: "contents", query, updatedAt: String(last.updated_at), id: String(last.id) })
           : null,
+    };
+  }
+
+  async contentMetadata(contentId: string, now = new Date()): Promise<ContentMetadata | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT c.id,c.title,c.created_at,c.updated_at,c.active_version_id,
+                cv.status,cv.source_format,cv.total_bytes,cv.activated_at,
+                (SELECT COUNT(*) FROM version_asset va WHERE va.version_id = c.active_version_id) AS file_count,
+                (SELECT COUNT(*) FROM share_link sl WHERE sl.content_id = c.id) AS total_link_count,
+                (SELECT COUNT(*) FROM share_link sl
+                  WHERE sl.content_id = c.id AND sl.revoked_at IS NULL
+                    AND (sl.expires_at IS NULL OR sl.expires_at > ?)) AS active_link_count
+           FROM content c
+      LEFT JOIN content_version cv ON cv.id = c.active_version_id
+          WHERE c.id = ?`,
+      )
+      .bind(now.toISOString(), contentId)
+      .first<Row>();
+    if (!row) return null;
+    const pdf = await new D1PdfRepository(this.db).stateForContent(contentId);
+    const ready = row.active_version_id !== null && row.status === "ready" && row.activated_at !== null;
+    return {
+      contentId: String(row.id),
+      title: String(row.title),
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+      publication: ready
+        ? {
+            state: "ready",
+            activeVersionId: String(row.active_version_id),
+            sourceFormat: String(row.source_format),
+            fileCount: Number(row.file_count),
+            totalBytes: Number(row.total_bytes),
+            activatedAt: String(row.activated_at),
+          }
+        : { state: "unpublished", activeVersionId: null, sourceFormat: null, fileCount: 0, totalBytes: 0, activatedAt: null },
+      sharing: { totalLinkCount: Number(row.total_link_count), activeLinkCount: Number(row.active_link_count) },
+      pdfCompanion: {
+        state: pdf.state,
+        ...(pdf.id ? { pdfId: pdf.id } : {}),
+        ...(pdf.fileName ? { fileName: pdf.fileName } : {}),
+        ...(pdf.size !== undefined ? { size: pdf.size } : {}),
+        ...(pdf.uploadedAt ? { uploadedAt: pdf.uploadedAt } : {}),
+        ...(pdf.approvedVersionId !== undefined ? { approvedVersionId: pdf.approvedVersionId } : {}),
+      },
     };
   }
 

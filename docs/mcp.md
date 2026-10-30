@@ -26,6 +26,8 @@ It also exposes `preview_list_contents` to discover stable IDs for existing priv
 
 Pass the returned opaque `nextCursor` back with the same query to continue. The tool returns compact metadata only; it does not return stored files or bearer share URLs and does not create analytics activity.
 
+Use `preview_get_content` with a discovered `contentId` to inspect the current publication and PDF state. It reports either `publication.state: "unpublished"` or the single current `ready` version with file count and size, plus link counts and `pdfCompanion.state` (`none`, `current` or `outdated`). It intentionally returns no historical versions, file bytes, detailed analytics or bearer URLs.
+
 The first two accept a validated manifest and return short-lived authenticated per-file upload URLs plus a commit URL. A remote Worker cannot dereference a path on the Codex machine, so real file bytes move through the local sideband helper:
 
 ```sh
