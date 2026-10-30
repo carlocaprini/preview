@@ -62,6 +62,24 @@ function createServer(env: PreviewEnv): McpServer {
   );
 
   server.registerTool(
+    "preview_get_analytics",
+    {
+      description: "Read privacy-preserving aggregate views, visible time and completed PDF deliveries for content or one of its links.",
+      inputSchema: z.object({
+        contentId: z.string().uuid(),
+        linkId: z.string().min(1).max(160).nullable().optional(),
+        days: z.union([z.literal(7), z.literal(30), z.literal(90)]).optional(),
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ contentId, linkId, days }) => {
+      const analytics = await admin.contentAnalytics({ contentId, linkId, days });
+      if (!analytics) throw new Error("Content not found");
+      return result(analytics);
+    },
+  );
+
+  server.registerTool(
     "preview_create_content",
     {
       description: "Create private Preview content and return authenticated per-file transfer instructions.",

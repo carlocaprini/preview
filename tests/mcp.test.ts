@@ -31,6 +31,7 @@ describe("stateless MCP contract", () => {
     expect(listed.tools.map((tool) => tool.name).sort()).toEqual([
       "preview_create_content",
       "preview_create_share_link",
+      "preview_get_analytics",
       "preview_get_content",
       "preview_list_contents",
       "preview_upload_version",

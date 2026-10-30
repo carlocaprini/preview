@@ -28,6 +28,8 @@ Pass the returned opaque `nextCursor` back with the same query to continue. The 
 
 Use `preview_get_content` with a discovered `contentId` to inspect the current publication and PDF state. It reports either `publication.state: "unpublished"` or the single current `ready` version with file count and size, plus link counts and `pdfCompanion.state` (`none`, `current` or `outdated`). It intentionally returns no historical versions, file bytes, detailed analytics or bearer URLs.
 
+Use `preview_get_analytics` for aggregate engagement. `days` is limited to `7`, `30` or `90` (default `30`) and returns exactly that many zero-filled UTC calendar days plus separate all-time totals. An optional internal `linkId` scopes the result to one link belonging to the content. Values represent measured views, visible milliseconds and fully served PDF responses—not identified or unique people.
+
 The first two accept a validated manifest and return short-lived authenticated per-file upload URLs plus a commit URL. A remote Worker cannot dereference a path on the Codex machine, so real file bytes move through the local sideband helper:
 
 ```sh
