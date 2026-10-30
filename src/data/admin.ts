@@ -1,3 +1,4 @@
+import { decodeCursor, encodeCursor } from "../domain/cursor.ts";
 import { shareTokenForId } from "../domain/links.ts";
 import { D1PdfRepository } from "./pdf.ts";
 
@@ -32,12 +33,114 @@ export interface ContentSummary {
   pdfDownloadsServed: number;
 }
 
+export interface ContentListItem {
+  contentId: string;
+  title: string;
+  updatedAt: string;
+  hasActiveHtml: boolean;
+  sourceFormat: string | null;
+  activeLinkCount: number;
+  meaningfulViews: number;
+}
+
+export interface ContentListPage {
+  contents: ContentListItem[];
+  nextCursor: string | null;
+}
+
+interface ContentCursor {
+  v: 1;
+  scope: "contents";
+  query: string;
+  updatedAt: string;
+  id: string;
+}
+
+function literalLike(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+}
+
+function contentCursor(value: string, query: string): ContentCursor {
+  const decoded = decodeCursor(value);
+  if (
+    decoded.v !== 1 ||
+    decoded.scope !== "contents" ||
+    decoded.query !== query ||
+    typeof decoded.updatedAt !== "string" ||
+    !Number.isFinite(Date.parse(decoded.updatedAt)) ||
+    typeof decoded.id !== "string" ||
+    decoded.id.length === 0
+  ) {
+    throw new Error("Invalid cursor for this content query");
+  }
+  return decoded as unknown as ContentCursor;
+}
+
 export class D1AdminRepository {
   constructor(
     private readonly db: D1Database,
     private readonly appOrigin: string,
     private readonly signingKey: string,
   ) {}
+
+  async listContentsPage(input: {
+    query?: string;
+    limit?: number;
+    cursor?: string | null;
+    now?: Date;
+  } = {}): Promise<ContentListPage> {
+    const query = input.query?.trim() ?? "";
+    const limit = input.limit ?? 20;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw new Error("Limit must be an integer from 1 to 50");
+    if (query.length > 160) throw new Error("Query must be at most 160 characters");
+    const cursor = input.cursor ? contentCursor(input.cursor, query) : null;
+    const conditions: string[] = [];
+    const bindings: Array<string | number> = [];
+    if (query) {
+      conditions.push("c.title LIKE ? ESCAPE '\\' COLLATE NOCASE");
+      bindings.push(`%${literalLike(query)}%`);
+    }
+    if (cursor) {
+      conditions.push("(c.updated_at < ? OR (c.updated_at = ? AND c.id < ?))");
+      bindings.push(cursor.updatedAt, cursor.updatedAt, cursor.id);
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const result = await this.db
+      .prepare(
+        `SELECT c.id,c.title,c.updated_at,cv.id AS active_version_id,cv.status,cv.source_format,
+                (SELECT COUNT(*) FROM share_link sl
+                  WHERE sl.content_id = c.id AND sl.revoked_at IS NULL
+                    AND (sl.expires_at IS NULL OR sl.expires_at > ?)) AS active_link_count,
+                (SELECT COALESCE(SUM(da.meaningful_views),0)
+                   FROM share_link sl JOIN daily_aggregate da ON da.share_link_id = sl.id
+                  WHERE sl.content_id = c.id) AS meaningful_views
+           FROM content c
+      LEFT JOIN content_version cv ON cv.id = c.active_version_id
+           ${where}
+       ORDER BY c.updated_at DESC,c.id DESC
+          LIMIT ?`,
+      )
+      .bind((input.now ?? new Date()).toISOString(), ...bindings, limit + 1)
+      .all<Row>();
+    const pageRows = result.results.slice(0, limit);
+    const contents = pageRows.map((row) => ({
+      contentId: String(row.id),
+      title: String(row.title),
+      updatedAt: String(row.updated_at),
+      hasActiveHtml: row.active_version_id !== null && row.status === "ready",
+      sourceFormat: row.source_format === null ? null : String(row.source_format),
+      activeLinkCount: Number(row.active_link_count),
+      meaningfulViews: Number(row.meaningful_views),
+    }));
+    const last = pageRows.at(-1);
+    return {
+      contents,
+      nextCursor:
+        result.results.length > limit && last
+          ? encodeCursor({ v: 1, scope: "contents", query, updatedAt: String(last.updated_at), id: String(last.id) })
+          : null,
+    };
+  }
 
   async listContents(now = new Date()): Promise<ContentSummary[]> {
     const result = await this.db

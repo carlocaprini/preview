@@ -3,6 +3,7 @@ import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
 import { D1PublishingRepository } from "./data/repository.ts";
 import { D1AssetStore } from "./data/assets.ts";
+import { D1AdminRepository } from "./data/admin.ts";
 import { PublishingService } from "./services/publishing.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "./types.ts";
 
@@ -29,6 +30,21 @@ function createServer(env: PreviewEnv): McpServer {
     new D1AssetStore(env.DB),
     env.APP_ORIGIN,
     env.SHARE_SIGNING_KEY,
+  );
+  const admin = new D1AdminRepository(env.DB, env.APP_ORIGIN, env.SHARE_SIGNING_KEY);
+
+  server.registerTool(
+    "preview_list_contents",
+    {
+      description: "List or find private Preview content by title with bounded, stable pagination. Returns metadata only.",
+      inputSchema: z.object({
+        query: z.string().max(160).optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+        cursor: z.string().max(2_048).nullable().optional(),
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ query, limit, cursor }) => result(await admin.listContentsPage({ query, limit, cursor })),
   );
 
   server.registerTool(

@@ -12,11 +12,19 @@ env_http_headers = { "Authorization" = "PREVIEW_MCP_AUTHORIZATION" }
 
 Set `PREVIEW_MCP_AUTHORIZATION` to `Bearer ` followed by the token. The local sideband helper reads the same raw token from `PREVIEW_MCP_TOKEN`.
 
-The MCP surface has exactly three business operations:
+The MCP surface preserves the three publishing operations:
 
 - `preview_create_content`
 - `preview_upload_version`
 - `preview_create_share_link`
+
+It also exposes `preview_list_contents` to discover stable IDs for existing private content. Search is a trimmed, case-insensitive literal title substring and results use bounded keyset pagination:
+
+```json
+{ "query": "Kumbe", "limit": 20, "cursor": null }
+```
+
+Pass the returned opaque `nextCursor` back with the same query to continue. The tool returns compact metadata only; it does not return stored files or bearer share URLs and does not create analytics activity.
 
 The first two accept a validated manifest and return short-lived authenticated per-file upload URLs plus a commit URL. A remote Worker cannot dereference a path on the Codex machine, so real file bytes move through the local sideband helper:
 
