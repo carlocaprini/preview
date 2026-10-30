@@ -5,6 +5,7 @@ import { D1PublishingRepository } from "./data/repository.ts";
 import { D1AssetStore } from "./data/assets.ts";
 import { D1AdminRepository } from "./data/admin.ts";
 import { D1ViewerRepository } from "./data/viewer.ts";
+import { SHARE_LINK_ID_PATTERN } from "./domain/links.ts";
 import { PublishingService } from "./services/publishing.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "./types.ts";
 
@@ -16,6 +17,7 @@ const manifest = z.array(
     mediaType: z.string().optional(),
   }),
 );
+const shareLinkId = z.string().regex(SHARE_LINK_ID_PATTERN, "Invalid share link ID");
 
 function result(value: unknown) {
   return {
@@ -69,7 +71,7 @@ function createServer(env: PreviewEnv): McpServer {
       description: "Read privacy-preserving aggregate views, visible time and completed PDF deliveries for content or one of its links.",
       inputSchema: z.object({
         contentId: z.string().uuid(),
-        linkId: z.string().min(1).max(160).nullable().optional(),
+        linkId: shareLinkId.nullable().optional(),
         days: z.union([z.literal(7), z.literal(30), z.literal(90)]).optional(),
       }),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -106,7 +108,7 @@ function createServer(env: PreviewEnv): McpServer {
     {
       description: "Change one existing non-revoked share link's expiry. Use null to make it indefinite.",
       inputSchema: z.object({
-        linkId: z.string().uuid(),
+        linkId: shareLinkId,
         expiresAt: z.union([z.iso.datetime({ offset: true }), z.null()]),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -123,7 +125,7 @@ function createServer(env: PreviewEnv): McpServer {
     "preview_revoke_share_link",
     {
       description: "Irreversibly revoke one existing share link. Repeated calls preserve the original revocation timestamp.",
-      inputSchema: z.object({ linkId: z.string().uuid() }),
+      inputSchema: z.object({ linkId: shareLinkId }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     async ({ linkId }) => {
