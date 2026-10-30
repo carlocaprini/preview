@@ -4,6 +4,8 @@ import { z } from "zod";
 import { D1PublishingRepository } from "./data/repository.ts";
 import { D1AssetStore } from "./data/assets.ts";
 import { D1AdminRepository } from "./data/admin.ts";
+import { D1ViewerRepository } from "./data/viewer.ts";
+import { SHARE_LINK_ID_PATTERN } from "./domain/links.ts";
 import { PublishingService } from "./services/publishing.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "./types.ts";
 
@@ -15,6 +17,7 @@ const manifest = z.array(
     mediaType: z.string().optional(),
   }),
 );
+const shareLinkId = z.string().regex(SHARE_LINK_ID_PATTERN, "Invalid share link ID");
 
 function result(value: unknown) {
   return {
@@ -32,6 +35,7 @@ function createServer(env: PreviewEnv): McpServer {
     env.SHARE_SIGNING_KEY,
   );
   const admin = new D1AdminRepository(env.DB, env.APP_ORIGIN, env.SHARE_SIGNING_KEY);
+  const viewer = new D1ViewerRepository(env.DB);
 
   server.registerTool(
     "preview_list_contents",
@@ -67,7 +71,7 @@ function createServer(env: PreviewEnv): McpServer {
       description: "Read privacy-preserving aggregate views, visible time and completed PDF deliveries for content or one of its links.",
       inputSchema: z.object({
         contentId: z.string().uuid(),
-        linkId: z.string().min(1).max(160).nullable().optional(),
+        linkId: shareLinkId.nullable().optional(),
         days: z.union([z.literal(7), z.literal(30), z.literal(90)]).optional(),
       }),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -96,6 +100,38 @@ function createServer(env: PreviewEnv): McpServer {
       const links = await admin.listShareLinks({ contentId, state, labelQuery, limit, cursor });
       if (!links) throw new Error("Content not found");
       return result(links);
+    },
+  );
+
+  server.registerTool(
+    "preview_update_share_link_expiry",
+    {
+      description: "Change one existing non-revoked share link's expiry. Use null to make it indefinite.",
+      inputSchema: z.object({
+        linkId: shareLinkId,
+        expiresAt: z.union([z.iso.datetime({ offset: true }), z.null()]),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ linkId, expiresAt }) => {
+      const normalized = expiresAt === null ? null : new Date(expiresAt).toISOString();
+      const updated = await viewer.updateLinkExpiryState(linkId, normalized);
+      if (!updated) throw new Error("Share link not found");
+      return result(updated);
+    },
+  );
+
+  server.registerTool(
+    "preview_revoke_share_link",
+    {
+      description: "Irreversibly revoke one existing share link. Repeated calls preserve the original revocation timestamp.",
+      inputSchema: z.object({ linkId: shareLinkId }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ linkId }) => {
+      const revoked = await viewer.revokeLinkState(linkId);
+      if (!revoked) throw new Error("Share link not found");
+      return result(revoked);
     },
   );
 

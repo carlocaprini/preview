@@ -32,6 +32,8 @@ Use `preview_get_analytics` for aggregate engagement. `days` is limited to `7`, 
 
 Use `preview_list_share_links` to recover existing links instead of creating duplicates. It supports `active`, `expired`, `revoked` or `all` states, literal label search and bounded cursor pagination. Returned URLs are bearer capabilities: keep them out of prompts sent to unrelated tools, logs, issues and public output. A label records owner intent; it does not identify or verify a reader.
 
+Use `preview_update_share_link_expiry` with an internal `linkId` and a timezone-aware ISO instant, or explicit `null` for no expiry. It can extend, shorten, immediately expire or restore a non-revoked expired link. Use `preview_revoke_share_link` only for an expressly requested irreversible revocation; retries are idempotent and preserve the first `revokedAt`. Revocation never deletes historical aggregate analytics and cannot be undone by an expiry edit.
+
 The first two accept a validated manifest and return short-lived authenticated per-file upload URLs plus a commit URL. A remote Worker cannot dereference a path on the Codex machine, so real file bytes move through the local sideband helper:
 
 ```sh

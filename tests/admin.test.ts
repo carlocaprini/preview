@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { D1AdminRepository } from "../src/data/admin.ts";
 import { shareTokenForId } from "../src/domain/links.ts";
+import { D1ViewerRepository } from "../src/data/viewer.ts";
 
 class BoundStatement {
   constructor(private readonly statement: StatementSync, private readonly values: unknown[] = []) {}
@@ -344,5 +345,33 @@ describe("MCP share-link discovery", () => {
     await expect(repo.listShareLinks({ contentId: "content-links", state: "expired", cursor: first?.nextCursor }))
       .rejects.toThrow("Invalid cursor");
     expect(await repo.listShareLinks({ contentId: "missing" })).toBeNull();
+  });
+});
+
+describe("MCP share-link management", () => {
+  it("updates expiry without changing identity and never reactivates a revoked link", async () => {
+    const database = new SqliteD1();
+    addContent(database, "content-links");
+    addLink(database, "link-managed", "content-links", null, null);
+    const repo = new D1ViewerRepository(database as unknown as D1Database);
+
+    expect(await repo.updateLinkExpiryState("link-managed", "2026-12-01T00:00:00.000Z", new Date("2026-11-01T00:00:00.000Z")))
+      .toMatchObject({ linkId: "link-managed", expiresAt: "2026-12-01T00:00:00.000Z", state: "active" });
+    expect(await repo.updateLinkExpiryState("link-managed", "2026-10-01T00:00:00.000Z", new Date("2026-11-01T00:00:00.000Z")))
+      .toMatchObject({ state: "expired" });
+    expect(await repo.updateLinkExpiryState("link-managed", null, new Date("2026-11-01T00:00:00.000Z")))
+      .toMatchObject({ expiresAt: null, state: "active" });
+
+    const revoked = await repo.revokeLinkState("link-managed", new Date("2026-11-02T00:00:00.000Z"));
+    const retried = await repo.revokeLinkState("link-managed", new Date("2026-11-03T00:00:00.000Z"));
+    expect(retried).toEqual(revoked);
+    await expect(repo.updateLinkExpiryState("link-managed", null)).rejects.toThrow("Revoked links cannot be updated");
+  });
+
+  it("returns not found without partial mutation", async () => {
+    const database = new SqliteD1();
+    const repo = new D1ViewerRepository(database as unknown as D1Database);
+    expect(await repo.updateLinkExpiryState("missing", null)).toBeNull();
+    expect(await repo.revokeLinkState("missing")).toBeNull();
   });
 });

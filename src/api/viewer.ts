@@ -36,8 +36,8 @@ export async function routeOwnerViewerApi(request: Request, env: PreviewEnv): Pr
         if (Number.isNaN(parsed.getTime())) throw new Error("Expiry must be an ISO date or null");
         expiresAt = parsed.toISOString();
       }
-      const updated = await new D1ViewerRepository(env.DB).updateLinkExpiry(linkMatch[1], expiresAt);
-      return updated ? json({ linkId: linkMatch[1], expiresAt }) : apiError("not_found", "Link not found", 404);
+      const updated = await new D1ViewerRepository(env.DB).updateLinkExpiryState(linkMatch[1], expiresAt);
+      return updated ? json(updated) : apiError("not_found", "Link not found", 404);
     } catch (error) {
       return apiError("invalid_expiry", error instanceof Error ? error.message : "Invalid expiry", 400);
     }
@@ -45,8 +45,8 @@ export async function routeOwnerViewerApi(request: Request, env: PreviewEnv): Pr
 
   const revokeMatch = url.pathname.match(/^\/api\/admin\/links\/([^/]+)\/revoke$/u);
   if (request.method === "POST" && revokeMatch?.[1]) {
-    const revoked = await new D1ViewerRepository(env.DB).revokeLink(revokeMatch[1], new Date());
-    return revoked ? json({ linkId: revokeMatch[1], revoked: true }) : apiError("not_found", "Link not found", 404);
+    const revoked = await new D1ViewerRepository(env.DB).revokeLinkState(revokeMatch[1], new Date());
+    return revoked ? json(revoked) : apiError("not_found", "Link not found", 404);
   }
 
   return null;

@@ -2,6 +2,8 @@ import { timingSafeEqual } from "../security/auth.ts";
 import { MAX_LINK_LIFETIME_SECONDS, MIN_LINK_LIFETIME_SECONDS } from "./limits.ts";
 import { randomId } from "./ids.ts";
 
+export const SHARE_LINK_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/u;
+
 function base64Url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -34,7 +36,7 @@ export async function parseShareToken(token: string, secret: string): Promise<st
   const parts = token.split(".");
   if (parts.length !== 2) return null;
   const [id, presented] = parts;
-  if (!id || !presented || !/^[A-Za-z0-9_-]{22}$/u.test(id)) return null;
+  if (!id || !presented || !SHARE_LINK_ID_PATTERN.test(id)) return null;
   const expected = await signature(id, secret);
   return (await timingSafeEqual(presented, expected)) ? id : null;
 }
