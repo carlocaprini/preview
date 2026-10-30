@@ -34,6 +34,16 @@ Use `preview_list_share_links` to recover existing links instead of creating dup
 
 Use `preview_update_share_link_expiry` with an internal `linkId` and a timezone-aware ISO instant, or explicit `null` for no expiry. It can extend, shorten, immediately expire or restore a non-revoked expired link. Use `preview_revoke_share_link` only for an expressly requested irreversible revocation; retries are idempotent and preserve the first `revokedAt`. Revocation never deletes historical aggregate analytics and cannot be undone by an expiry edit.
 
+Use `preview_get_content_files` to inspect the manifest of the single current active HTML/ZIP version. Each entry contains its relative path, media type, exact size and SHA-256 digest. `preview_read_content_file` returns small UTF-8 text files inline; binary files and text larger than 64 KiB return a `download` instruction instead. Always pass the observed `activeVersionId`: a replacement makes the plan stale instead of mixing versions.
+
+To export the complete current tree, save the manifest result as a JSON transfer plan and run:
+
+```sh
+node scripts/preview-transfer.mjs download ./content-transfer-plan.json ./current-content
+```
+
+The helper sends `PREVIEW_MCP_TOKEN` only to the configured app origin, verifies every path, byte count and SHA-256 digest, and refuses to overwrite an existing destination. Private source retrieval never uses a public share link, renders uploaded HTML, or creates analytics activity.
+
 The first two accept a validated manifest and return short-lived authenticated per-file upload URLs plus a commit URL. A remote Worker cannot dereference a path on the Codex machine, so real file bytes move through the local sideband helper:
 
 ```sh

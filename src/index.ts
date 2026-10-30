@@ -5,6 +5,7 @@ import { routeAdminApi } from "./api/admin.ts";
 import { routeAnalyticsApi } from "./api/analytics.ts";
 import { routeAuthApi } from "./api/auth.ts";
 import { publicPdfResponse, routePdfAdminApi } from "./api/pdf.ts";
+import { routeMcpTransferApi } from "./api/mcp-transfer.ts";
 import { clientAsset } from "./client-assets.ts";
 import { handleMcp } from "./mcp.ts";
 import {
@@ -76,6 +77,15 @@ async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecution
 
   if (url.pathname.startsWith("/api/auth/")) {
     const response = await routeAuthApi(request, env);
+    return applyHeaders(response ?? apiError("not_found", "Not found", 404), appHeaders(env));
+  }
+
+  if (url.pathname.startsWith("/api/mcp/")) {
+    const mcp = await authenticateMcp(request, env);
+    if (!mcp.authorized) {
+      return applyHeaders(apiError("authentication_required", "MCP authentication required", 401), appHeaders(env));
+    }
+    const response = await routeMcpTransferApi(request, env);
     return applyHeaders(response ?? apiError("not_found", "Not found", 404), appHeaders(env));
   }
 
