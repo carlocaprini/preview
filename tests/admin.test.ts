@@ -207,3 +207,53 @@ describe("bounded MCP content discovery", () => {
     await expect(repo.listContentsPage({ query: "Other", cursor: page.nextCursor })).rejects.toThrow("Invalid cursor");
   });
 });
+
+describe("MCP content metadata", () => {
+  it("returns a narrow unpublished state without link URLs or aggregate history", async () => {
+    const database = new SqliteD1();
+    addContent(database, "draft-content");
+    addLink(database, "expired-link", "draft-content", "2026-01-01T00:00:00.000Z", null);
+
+    const metadata = await repository(database).contentMetadata("draft-content", new Date("2026-02-01T00:00:00.000Z"));
+
+    expect(metadata).toMatchObject({
+      contentId: "draft-content",
+      publication: { state: "unpublished", activeVersionId: null, fileCount: 0, totalBytes: 0 },
+      sharing: { totalLinkCount: 1, activeLinkCount: 0 },
+      pdfCompanion: { state: "none" },
+    });
+    expect(JSON.stringify(metadata)).not.toMatch(/url|aggregates|versions/iu);
+  });
+
+  it("returns only the current ready version and authoritative PDF approval state", async () => {
+    const database = new SqliteD1();
+    addContent(database, "ready-content");
+    database.raw.prepare(
+      `INSERT INTO content_version
+        (id,content_id,sequence,status,source_format,manifest_json,total_bytes,created_at,activated_at,public_snapshot_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    ).run("version-current", "ready-content", 1, "ready", "zip", '{"files":[],"totalBytes":12}', 12, "2026-01-01T00:00:00.000Z", "2026-01-02T00:00:00.000Z", "snapshot-current");
+    database.raw.prepare("INSERT INTO version_asset (version_id,path,media_type,expected_bytes,uploaded_bytes) VALUES (?,?,?,?,?)")
+      .run("version-current", "index.html", "text/html; charset=utf-8", 12, 12);
+    database.raw.prepare(
+      "INSERT INTO pdf_companion (id,content_id,safe_filename,total_bytes,status,created_at,ready_at) VALUES (?,?,?,?,?,?,?)",
+    ).run("pdf-current", "ready-content", "report.pdf", 100, "ready", "2026-01-01T00:00:00.000Z", "2026-01-02T00:00:00.000Z");
+    database.raw.prepare(
+      "UPDATE content SET active_version_id = ?,current_pdf_id = ?,pdf_approved_html_version_id = ? WHERE id = ?",
+    ).run("version-current", "pdf-current", null, "ready-content");
+
+    const metadata = await repository(database).contentMetadata("ready-content");
+
+    expect(metadata).toMatchObject({
+      publication: {
+        state: "ready",
+        activeVersionId: "version-current",
+        sourceFormat: "zip",
+        fileCount: 1,
+        totalBytes: 12,
+      },
+      pdfCompanion: { state: "outdated", pdfId: "pdf-current", fileName: "report.pdf", approvedVersionId: null },
+    });
+    expect(await repository(database).contentMetadata("missing-content")).toBeNull();
+  });
+});

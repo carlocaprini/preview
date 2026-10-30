@@ -48,6 +48,20 @@ function createServer(env: PreviewEnv): McpServer {
   );
 
   server.registerTool(
+    "preview_get_content",
+    {
+      description: "Inspect one private content item's current publication, sharing summary and PDF companion state without reading file bytes.",
+      inputSchema: z.object({ contentId: z.string().uuid() }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ contentId }) => {
+      const content = await admin.contentMetadata(contentId);
+      if (!content) throw new Error("Content not found");
+      return result(content);
+    },
+  );
+
+  server.registerTool(
     "preview_create_content",
     {
       description: "Create private Preview content and return authenticated per-file transfer instructions.",
