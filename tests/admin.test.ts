@@ -3,6 +3,7 @@ import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { D1AdminRepository } from "../src/data/admin.ts";
+import { shareTokenForId } from "../src/domain/links.ts";
 
 class BoundStatement {
   constructor(private readonly statement: StatementSync, private readonly values: unknown[] = []) {}
@@ -306,5 +307,42 @@ describe("MCP aggregate analytics", () => {
     await expect(repository(database).contentAnalytics({ contentId: "content-a", linkId: "link-b" }))
       .rejects.toThrow("Share link not found for this content");
     expect(await repository(database).contentAnalytics({ contentId: "missing" })).toBeNull();
+  });
+});
+
+describe("MCP share-link discovery", () => {
+  it("returns stable URLs for all states and filters labels as literal text", async () => {
+    const database = new SqliteD1();
+    addContent(database, "content-links");
+    addLink(database, "active-link", "content-links", null, null);
+    addLink(database, "expired-link", "content-links", "2026-01-01T00:00:00.000Z", null);
+    addLink(database, "revoked-link", "content-links", null, "2026-01-02T00:00:00.000Z");
+    database.raw.prepare("UPDATE share_link SET label = ? WHERE id = ?").run("Prospect 100%_review", "active-link");
+    const repo = repository(database);
+
+    const all = await repo.listShareLinks({ contentId: "content-links", now: new Date("2026-02-01T00:00:00.000Z") });
+    expect(all?.links.map((link) => link.state).sort()).toEqual(["active", "expired", "revoked"]);
+    const expectedToken = await shareTokenForId("active-link", "admin-history-test-signing-key-at-least-thirty-two-bytes");
+    expect(all?.links.find((link) => link.linkId === "active-link")?.url).toBe(`https://preview.test/s/${expectedToken}`);
+    expect((await repo.listShareLinks({ contentId: "content-links", labelQuery: "%_review" }))?.links.map((link) => link.linkId))
+      .toEqual(["active-link"]);
+    expect((await repo.listShareLinks({ contentId: "content-links", state: "revoked" }))?.links.map((link) => link.linkId))
+      .toEqual(["revoked-link"]);
+  });
+
+  it("paginates equal creation timestamps and binds cursors to their filter", async () => {
+    const database = new SqliteD1();
+    addContent(database, "content-links");
+    for (let index = 0; index < 51; index += 1) {
+      addLink(database, `link-${String(index).padStart(2, "0")}`, "content-links", null, null);
+    }
+    const repo = repository(database);
+    const first = await repo.listShareLinks({ contentId: "content-links", limit: 50 });
+    const second = await repo.listShareLinks({ contentId: "content-links", limit: 50, cursor: first?.nextCursor });
+    expect(first?.links).toHaveLength(50);
+    expect(second?.links).toHaveLength(1);
+    await expect(repo.listShareLinks({ contentId: "content-links", state: "expired", cursor: first?.nextCursor }))
+      .rejects.toThrow("Invalid cursor");
+    expect(await repo.listShareLinks({ contentId: "missing" })).toBeNull();
   });
 });
