@@ -6,6 +6,7 @@ import { D1AssetStore } from "./data/assets.ts";
 import { D1AdminRepository } from "./data/admin.ts";
 import { D1ViewerRepository } from "./data/viewer.ts";
 import { SHARE_LINK_ID_PATTERN } from "./domain/links.ts";
+import { ContentSourceService } from "./services/content-source.ts";
 import { PublishingService } from "./services/publishing.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "./types.ts";
 
@@ -36,6 +37,7 @@ function createServer(env: PreviewEnv): McpServer {
   );
   const admin = new D1AdminRepository(env.DB, env.APP_ORIGIN, env.SHARE_SIGNING_KEY);
   const viewer = new D1ViewerRepository(env.DB);
+  const source = new ContentSourceService(env.DB, env.APP_ORIGIN);
 
   server.registerTool(
     "preview_list_contents",
@@ -133,6 +135,31 @@ function createServer(env: PreviewEnv): McpServer {
       if (!revoked) throw new Error("Share link not found");
       return result(revoked);
     },
+  );
+
+  server.registerTool(
+    "preview_get_content_files",
+    {
+      description: "List the exact files in the single current active HTML/ZIP version and prepare authenticated private downloads.",
+      inputSchema: z.object({ contentId: z.string().uuid() }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ contentId }) => result(await source.manifest(contentId)),
+  );
+
+  server.registerTool(
+    "preview_read_content_file",
+    {
+      description: "Read a small UTF-8 source file from the current active version, or return an authenticated download instruction.",
+      inputSchema: z.object({
+        contentId: z.string().uuid(),
+        path: z.string().min(1).max(512),
+        expectedActiveVersionId: z.string().uuid(),
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ contentId, path, expectedActiveVersionId }) =>
+      result(await source.readText(contentId, expectedActiveVersionId, path)),
   );
 
   server.registerTool(

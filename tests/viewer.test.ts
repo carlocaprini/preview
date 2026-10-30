@@ -8,6 +8,7 @@ import { handleRequest } from "../src/index.ts";
 import { PublishingService } from "../src/services/publishing.ts";
 import { createOwnerSession, OWNER_SESSION_COOKIE } from "../src/security/auth.ts";
 import { D1PdfRepository } from "../src/data/pdf.ts";
+import { ContentSourceService } from "../src/services/content-source.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "../src/types.ts";
 
 class BoundStatement {
@@ -716,5 +717,62 @@ describe("public and owner viewing", () => {
       }), env, anonymous,
     );
     expect(removed.status).toBe(409);
+  });
+
+  it("retrieves only current private source files through the MCP Bearer sideband", async () => {
+    const htmlBytes = bytes("<h1>Kumbe</h1>");
+    const imageBytes = new Uint8Array([1, 2, 3, 4]);
+    const plan = await publishing.createContent({
+      title: "Source export",
+      sourceFormat: "zip",
+      files: [
+        { path: "index.html", size: htmlBytes.byteLength },
+        { path: "assets/pixel.png", size: imageBytes.byteLength },
+      ],
+    });
+    await publishing.uploadAsset(plan.uploadId, "index.html", uploadRequest(htmlBytes));
+    await publishing.uploadAsset(plan.uploadId, "assets/pixel.png", uploadRequest(imageBytes));
+    await publishing.commit(plan.uploadId);
+
+    const service = new ContentSourceService(env.DB, env.APP_ORIGIN);
+    const manifest = await service.manifest(plan.contentId);
+    expect(manifest).toMatchObject({
+      contentId: plan.contentId,
+      activeVersionId: plan.versionId,
+      sourceFormat: "zip",
+      transfer: { method: "authenticated-sideband", baseOrigin: env.APP_ORIGIN },
+    });
+    expect(manifest.files.map((file) => file.path)).toEqual(["assets/pixel.png", "index.html"]);
+    expect(await service.readText(plan.contentId, plan.versionId, "index.html")).toMatchObject({
+      kind: "text",
+      text: "<h1>Kumbe</h1>",
+    });
+    expect(await service.readText(plan.contentId, plan.versionId, "assets/pixel.png")).toMatchObject({
+      kind: "download",
+      reason: "binary",
+    });
+
+    const url = `https://app.test/api/mcp/contents/${plan.contentId}/versions/${plan.versionId}/files/assets%2Fpixel.png`;
+    expect((await handleRequest(new Request(url), env, anonymous)).status).toBe(401);
+    expect((await handleRequest(await ownerRequest(env, url), env, anonymous)).status).toBe(401);
+    const downloaded = await handleRequest(
+      new Request(url, { headers: { Authorization: `Bearer ${env.MCP_BEARER_TOKEN}` } }),
+      env,
+      anonymous,
+    );
+    expect(downloaded.status).toBe(200);
+    expect(downloaded.headers.get("content-type")).toBe("application/octet-stream");
+    expect(downloaded.headers.get("content-disposition")).toContain("attachment");
+    expect(downloaded.headers.get("cache-control")).toContain("no-store");
+    expect(new Uint8Array(await downloaded.arrayBuffer())).toEqual(imageBytes);
+
+    const stale = url.replace(plan.versionId, "00000000-0000-4000-8000-000000000000");
+    expect((await handleRequest(new Request(stale, { headers: { Authorization: `Bearer ${env.MCP_BEARER_TOKEN}` } }), env, anonymous)).status)
+      .toBe(404);
+    database.raw.prepare("UPDATE asset_chunk SET bytes = ? WHERE version_id = ? AND path = ? AND chunk_index = 0")
+      .run(bytes("<h1>Other</h1>"), plan.versionId, "index.html");
+    await expect(service.readText(plan.contentId, plan.versionId, "index.html"))
+      .rejects.toThrow("Stored file digest does not match its manifest");
+    expect(database.raw.prepare("SELECT COUNT(*) AS count FROM daily_aggregate").get()).toEqual({ count: 0 });
   });
 });
