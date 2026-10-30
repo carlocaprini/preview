@@ -30,6 +30,8 @@ Use `preview_get_content` with a discovered `contentId` to inspect the current p
 
 Use `preview_get_analytics` for aggregate engagement. `days` is limited to `7`, `30` or `90` (default `30`) and returns exactly that many zero-filled UTC calendar days plus separate all-time totals. An optional internal `linkId` scopes the result to one link belonging to the content. Values represent measured views, visible milliseconds and fully served PDF responses—not identified or unique people.
 
+Use `preview_list_share_links` to recover existing links instead of creating duplicates. It supports `active`, `expired`, `revoked` or `all` states, literal label search and bounded cursor pagination. Returned URLs are bearer capabilities: keep them out of prompts sent to unrelated tools, logs, issues and public output. A label records owner intent; it does not identify or verify a reader.
+
 The first two accept a validated manifest and return short-lived authenticated per-file upload URLs plus a commit URL. A remote Worker cannot dereference a path on the Codex machine, so real file bytes move through the local sideband helper:
 
 ```sh

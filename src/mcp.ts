@@ -80,6 +80,26 @@ function createServer(env: PreviewEnv): McpServer {
   );
 
   server.registerTool(
+    "preview_list_share_links",
+    {
+      description: "List and recover existing labeled bearer share URLs for one private content item without creating new links.",
+      inputSchema: z.object({
+        contentId: z.string().uuid(),
+        state: z.enum(["all", "active", "expired", "revoked"]).optional(),
+        labelQuery: z.string().max(120).nullable().optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+        cursor: z.string().max(2_048).nullable().optional(),
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ contentId, state, labelQuery, limit, cursor }) => {
+      const links = await admin.listShareLinks({ contentId, state, labelQuery, limit, cursor });
+      if (!links) throw new Error("Content not found");
+      return result(links);
+    },
+  );
+
+  server.registerTool(
     "preview_create_content",
     {
       description: "Create private Preview content and return authenticated per-file transfer instructions.",

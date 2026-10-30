@@ -92,6 +92,32 @@ export interface ContentAnalytics {
   meaning: string;
 }
 
+export type ShareLinkFilter = "all" | "active" | "expired" | "revoked";
+
+export interface ShareLinkListPage {
+  contentId: string;
+  links: Array<{
+    linkId: string;
+    label: string;
+    url: string;
+    createdAt: string;
+    expiresAt: string | null;
+    revokedAt: string | null;
+    state: "active" | "expired" | "revoked";
+  }>;
+  nextCursor: string | null;
+}
+
+interface ShareLinkCursor {
+  v: 1;
+  scope: "share-links";
+  contentId: string;
+  state: ShareLinkFilter;
+  labelQuery: string;
+  createdAt: string;
+  linkId: string;
+}
+
 interface ContentCursor {
   v: 1;
   scope: "contents";
@@ -118,6 +144,27 @@ function contentCursor(value: string, query: string): ContentCursor {
     throw new Error("Invalid cursor for this content query");
   }
   return decoded as unknown as ContentCursor;
+}
+
+function shareLinkCursor(
+  value: string,
+  expected: Pick<ShareLinkCursor, "contentId" | "state" | "labelQuery">,
+): ShareLinkCursor {
+  const decoded = decodeCursor(value);
+  if (
+    decoded.v !== 1 ||
+    decoded.scope !== "share-links" ||
+    decoded.contentId !== expected.contentId ||
+    decoded.state !== expected.state ||
+    decoded.labelQuery !== expected.labelQuery ||
+    typeof decoded.createdAt !== "string" ||
+    !Number.isFinite(Date.parse(decoded.createdAt)) ||
+    typeof decoded.linkId !== "string" ||
+    decoded.linkId.length === 0
+  ) {
+    throw new Error("Invalid cursor for this share-link query");
+  }
+  return decoded as unknown as ShareLinkCursor;
 }
 
 export class D1AdminRepository {
@@ -301,6 +348,89 @@ export class D1AdminRepository {
         };
       }),
       meaning: "Aggregated measurements, not identified or unique readers. PDF downloads count completed server deliveries.",
+    };
+  }
+
+  async listShareLinks(input: {
+    contentId: string;
+    state?: ShareLinkFilter;
+    labelQuery?: string | null;
+    limit?: number;
+    cursor?: string | null;
+    now?: Date;
+  }): Promise<ShareLinkListPage | null> {
+    const content = await this.db.prepare("SELECT id FROM content WHERE id = ?").bind(input.contentId).first<Row>();
+    if (!content) return null;
+    const state = input.state ?? "all";
+    const labelQuery = input.labelQuery?.trim() ?? "";
+    const limit = input.limit ?? 20;
+    if (!(["all", "active", "expired", "revoked"] as const).includes(state)) throw new Error("Invalid link state");
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw new Error("Limit must be an integer from 1 to 50");
+    if (labelQuery.length > 120) throw new Error("Label query must be at most 120 characters");
+    const cursor = input.cursor ? shareLinkCursor(input.cursor, { contentId: input.contentId, state, labelQuery }) : null;
+    const now = (input.now ?? new Date()).toISOString();
+    const conditions = ["sl.content_id = ?"];
+    const bindings: Array<string | number> = [input.contentId];
+    if (state === "active") {
+      conditions.push("sl.revoked_at IS NULL", "(sl.expires_at IS NULL OR sl.expires_at > ?)");
+      bindings.push(now);
+    } else if (state === "expired") {
+      conditions.push("sl.revoked_at IS NULL", "sl.expires_at IS NOT NULL", "sl.expires_at <= ?");
+      bindings.push(now);
+    } else if (state === "revoked") {
+      conditions.push("sl.revoked_at IS NOT NULL");
+    }
+    if (labelQuery) {
+      conditions.push("sl.label LIKE ? ESCAPE '\\' COLLATE NOCASE");
+      bindings.push(`%${literalLike(labelQuery)}%`);
+    }
+    if (cursor) {
+      conditions.push("(sl.created_at < ? OR (sl.created_at = ? AND sl.id < ?))");
+      bindings.push(cursor.createdAt, cursor.createdAt, cursor.linkId);
+    }
+    const result = await this.db
+      .prepare(
+        `SELECT sl.id,sl.label,sl.created_at,sl.expires_at,sl.revoked_at
+           FROM share_link sl
+          WHERE ${conditions.join(" AND ")}
+       ORDER BY sl.created_at DESC,sl.id DESC
+          LIMIT ?`,
+      )
+      .bind(...bindings, limit + 1)
+      .all<Row>();
+    const pageRows = result.results.slice(0, limit);
+    const links = await Promise.all(
+      pageRows.map(async (row) => ({
+        linkId: String(row.id),
+        label: String(row.label),
+        url: `${this.appOrigin}/s/${await shareTokenForId(String(row.id), this.signingKey)}`,
+        createdAt: String(row.created_at),
+        expiresAt: row.expires_at === null ? null : String(row.expires_at),
+        revokedAt: row.revoked_at === null ? null : String(row.revoked_at),
+        state:
+          row.revoked_at !== null
+            ? ("revoked" as const)
+            : row.expires_at !== null && Date.parse(String(row.expires_at)) <= Date.parse(now)
+              ? ("expired" as const)
+              : ("active" as const),
+      })),
+    );
+    const last = pageRows.at(-1);
+    return {
+      contentId: input.contentId,
+      links,
+      nextCursor:
+        result.results.length > limit && last
+          ? encodeCursor({
+              v: 1,
+              scope: "share-links",
+              contentId: input.contentId,
+              state,
+              labelQuery,
+              createdAt: String(last.created_at),
+              linkId: String(last.id),
+            })
+          : null,
     };
   }
 
