@@ -7,6 +7,7 @@ import { D1AdminRepository } from "./data/admin.ts";
 import { D1ViewerRepository } from "./data/viewer.ts";
 import { SHARE_LINK_ID_PATTERN } from "./domain/links.ts";
 import { ContentSourceService } from "./services/content-source.ts";
+import { D1PdfRepository, type PdfCompanionState } from "./data/pdf.ts";
 import { PublishingService } from "./services/publishing.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "./types.ts";
 
@@ -27,6 +28,17 @@ function result(value: unknown) {
   };
 }
 
+function pdfState(value: PdfCompanionState) {
+  return {
+    state: value.state,
+    ...(value.id ? { pdfId: value.id } : {}),
+    ...(value.fileName ? { fileName: value.fileName } : {}),
+    ...(value.size !== undefined ? { size: value.size } : {}),
+    ...(value.uploadedAt ? { uploadedAt: value.uploadedAt } : {}),
+    ...(value.approvedVersionId !== undefined ? { approvedVersionId: value.approvedVersionId } : {}),
+  };
+}
+
 function createServer(env: PreviewEnv): McpServer {
   const server = new McpServer({ name: "preview", version: "1.0.0" });
   const publishing = new PublishingService(
@@ -38,6 +50,7 @@ function createServer(env: PreviewEnv): McpServer {
   const admin = new D1AdminRepository(env.DB, env.APP_ORIGIN, env.SHARE_SIGNING_KEY);
   const viewer = new D1ViewerRepository(env.DB);
   const source = new ContentSourceService(env.DB, env.APP_ORIGIN);
+  const pdf = new D1PdfRepository(env.DB);
 
   server.registerTool(
     "preview_list_contents",
@@ -160,6 +173,59 @@ function createServer(env: PreviewEnv): McpServer {
     },
     async ({ contentId, path, expectedActiveVersionId }) =>
       result(await source.readText(contentId, expectedActiveVersionId, path)),
+  );
+
+  server.registerTool(
+    "preview_start_pdf_upload",
+    {
+      description: "Start a guarded upload or replacement of the single private PDF companion and return MCP-Bearer transfer URLs.",
+      inputSchema: z.object({
+        contentId: z.string().uuid(),
+        fileName: z.string().min(5).max(180),
+        size: z.number().int().min(1).max(10 * 1024 * 1024),
+        expectedActiveVersionId: z.string().uuid(),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    },
+    async ({ contentId, fileName, size, expectedActiveVersionId }) =>
+      result(await pdf.startUpload({
+        contentId,
+        fileName,
+        size,
+        expectedActiveVersionId,
+        now: new Date(),
+        appOrigin: env.APP_ORIGIN,
+        transferBasePath: "/api/mcp/pdf/uploads",
+      })),
+  );
+
+  server.registerTool(
+    "preview_confirm_pdf_reuse",
+    {
+      description: "Explicitly approve the current retained PDF for exactly the current active HTML version.",
+      inputSchema: z.object({
+        contentId: z.string().uuid(),
+        pdfId: z.string().uuid(),
+        expectedActiveVersionId: z.string().uuid(),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ contentId, pdfId, expectedActiveVersionId }) =>
+      result(pdfState(await pdf.confirmReuse(contentId, pdfId, expectedActiveVersionId))),
+  );
+
+  server.registerTool(
+    "preview_remove_pdf",
+    {
+      description: "Remove the expected current PDF companion without touching HTML, links or historical aggregate delivery counts.",
+      inputSchema: z.object({ contentId: z.string().uuid(), expectedPdfId: z.string().uuid() }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ contentId, expectedPdfId }) => {
+      const removed = await pdf.removeExpected(contentId, expectedPdfId);
+      if (!removed) throw new Error("Content not found");
+      return result(removed);
+    },
   );
 
   server.registerTool(

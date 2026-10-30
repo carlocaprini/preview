@@ -775,4 +775,57 @@ describe("public and owner viewing", () => {
       .rejects.toThrow("Stored file digest does not match its manifest");
     expect(database.raw.prepare("SELECT COUNT(*) AS count FROM daily_aggregate").get()).toEqual({ count: 0 });
   });
+
+  it("manages guarded PDF replacement and removal through narrow MCP transfer routes", async () => {
+    const published = await publish("Machine PDF", "<h1>PDF</h1>");
+    const repository = new D1PdfRepository(env.DB);
+    const firstBytes = bytes("%PDF-1.7\nfirst");
+    const first = await repository.startUpload({
+      contentId: published.contentId,
+      fileName: "first.pdf",
+      size: firstBytes.byteLength,
+      expectedActiveVersionId: published.versionId,
+      now: new Date(),
+      appOrigin: env.APP_ORIGIN,
+      transferBasePath: "/api/mcp/pdf/uploads",
+    });
+    expect(first).toMatchObject({ size: firstBytes.byteLength });
+    expect(first.uploadUrl).toContain("/api/mcp/pdf/uploads/");
+    expect((await handleRequest(await ownerRequest(env, first.uploadUrl, { method: "PUT", body: firstBytes.slice().buffer as ArrayBuffer }), env, anonymous)).status)
+      .toBe(401);
+
+    const machineHeaders = { Authorization: `Bearer ${env.MCP_BEARER_TOKEN}` };
+    expect((await handleRequest(new Request(first.uploadUrl, { method: "PUT", headers: machineHeaders, body: firstBytes.slice().buffer as ArrayBuffer }), env, anonymous)).status)
+      .toBe(204);
+    const firstCommit = await handleRequest(new Request(first.commitUrl, { method: "POST", headers: machineHeaders }), env, anonymous);
+    expect(firstCommit.status).toBe(200);
+    expect(await repository.stateForContent(published.contentId)).toMatchObject({ state: "current", id: first.pdfId });
+
+    const secondBytes = bytes("%PDF-1.7\nsecond");
+    const second = await repository.startUpload({
+      contentId: published.contentId,
+      fileName: "second.pdf",
+      size: secondBytes.byteLength,
+      expectedActiveVersionId: published.versionId,
+      now: new Date(),
+      appOrigin: env.APP_ORIGIN,
+      transferBasePath: "/api/mcp/pdf/uploads",
+    });
+    expect((await handleRequest(new Request(second.uploadUrl, { method: "PUT", headers: machineHeaders, body: secondBytes.slice().buffer as ArrayBuffer }), env, anonymous)).status)
+      .toBe(204);
+    expect(await repository.stateForContent(published.contentId)).toMatchObject({ id: first.pdfId });
+    expect((await handleRequest(new Request(second.commitUrl, { method: "POST", headers: machineHeaders }), env, anonymous)).status)
+      .toBe(200);
+    expect(await repository.stateForContent(published.contentId)).toMatchObject({ state: "current", id: second.pdfId });
+
+    await expect(repository.removeExpected(published.contentId, first.pdfId)).rejects.toThrow("PDF companion changed");
+    expect(await repository.removeExpected(published.contentId, second.pdfId)).toEqual({
+      state: "none",
+      removed: true,
+      pdfId: second.pdfId,
+    });
+    expect(await repository.removeExpected(published.contentId, second.pdfId)).toMatchObject({ removed: true });
+    expect(await repository.stateForContent(published.contentId)).toEqual({ state: "none" });
+    expect(database.raw.prepare("SELECT COUNT(*) AS count FROM daily_aggregate").get()).toEqual({ count: 0 });
+  });
 });

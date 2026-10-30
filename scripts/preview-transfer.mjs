@@ -215,6 +215,45 @@ export async function download(planPath, destinationPath) {
   }
 }
 
+export async function pdfUpload(sourcePath, planPath) {
+  const token = process.env.PREVIEW_MCP_TOKEN;
+  if (!token) throw new Error("PREVIEW_MCP_TOKEN is required");
+  const payload = new Uint8Array(await readFile(sourcePath));
+  const plan = JSON.parse(await readFile(planPath, "utf8"));
+  if (
+    !plan ||
+    typeof plan.uploadId !== "string" ||
+    typeof plan.size !== "number" ||
+    !Number.isSafeInteger(plan.size) ||
+    plan.size < 1 ||
+    plan.size > 10 * 1024 * 1024
+  ) {
+    throw new Error("Invalid PDF transfer plan");
+  }
+  if (payload.byteLength !== plan.size) throw new Error(`Expected ${plan.size} PDF bytes`);
+  if (
+    payload.byteLength < 5 ||
+    payload[0] !== 0x25 ||
+    payload[1] !== 0x50 ||
+    payload[2] !== 0x44 ||
+    payload[3] !== 0x46 ||
+    payload[4] !== 0x2d
+  ) {
+    throw new Error("File is not a PDF");
+  }
+  const base = `${trustedOrigin()}/api/mcp/pdf/uploads/${encodeURIComponent(plan.uploadId)}`;
+  const headers = { Authorization: `Bearer ${token}` };
+  const uploaded = await fetch(exactTransferUrl(plan.uploadUrl, `${base}/data`), {
+    method: "PUT",
+    headers: { ...headers, "Content-Type": "application/pdf", "Content-Length": String(payload.byteLength) },
+    body: payload,
+  });
+  if (!uploaded.ok) throw new Error(`PDF upload failed: ${uploaded.status} ${await uploaded.text()}`);
+  const committed = await fetch(exactTransferUrl(plan.commitUrl, `${base}/commit`), { method: "POST", headers });
+  if (!committed.ok) throw new Error(`PDF commit failed: ${committed.status} ${await committed.text()}`);
+  process.stdout.write(`${JSON.stringify(await committed.json())}\n`);
+}
+
 export async function main(argv = process.argv) {
   const [, , command, sourcePath, planPath] = argv;
   try {
@@ -225,8 +264,10 @@ export async function main(argv = process.argv) {
     await upload(sourcePath, planPath);
   } else if (command === "download" && sourcePath && planPath) {
     await download(sourcePath, planPath);
+  } else if (command === "pdf-upload" && sourcePath && planPath) {
+    await pdfUpload(sourcePath, planPath);
   } else {
-    fail("Usage: preview-transfer manifest <file.html|bundle.zip> | upload <source> <transfer-plan.json> | download <transfer-plan.json> <destination>");
+    fail("Usage: preview-transfer manifest <file.html|bundle.zip> | upload <source> <transfer-plan.json> | download <transfer-plan.json> <destination> | pdf-upload <file.pdf> <transfer-plan.json>");
   }
   } catch (error) {
     fail(error instanceof Error ? error.message : "Transfer failed");

@@ -21,9 +21,16 @@ export interface PdfCompanionState {
 export interface PdfUploadPlan {
   uploadId: string;
   pdfId: string;
+  size: number;
   expiresAt: string;
   uploadUrl: string;
   commitUrl: string;
+}
+
+export interface PdfRemovalResult {
+  state: "none";
+  removed: true;
+  pdfId: string;
 }
 
 export interface PublicPdf {
@@ -59,6 +66,7 @@ export class D1PdfRepository {
     expectedActiveVersionId: string;
     now: Date;
     appOrigin: string;
+    transferBasePath?: "/api/admin/pdf/uploads" | "/api/mcp/pdf/uploads";
   }): Promise<PdfUploadPlan> {
     if (!Number.isSafeInteger(input.size) || input.size <= 0 || input.size > MAX_PDF_BYTES) {
       throw new Error(`PDF size must be between 1 byte and ${MAX_PDF_BYTES} bytes`);
@@ -94,12 +102,14 @@ export class D1PdfRepository {
         createdAt,
       ),
     ]);
+    const transferBasePath = input.transferBasePath ?? "/api/admin/pdf/uploads";
     return {
       uploadId,
       pdfId,
+      size: input.size,
       expiresAt,
-      uploadUrl: `${input.appOrigin}/api/admin/pdf/uploads/${uploadId}/data`,
-      commitUrl: `${input.appOrigin}/api/admin/pdf/uploads/${uploadId}/commit`,
+      uploadUrl: `${input.appOrigin}${transferBasePath}/${uploadId}/data`,
+      commitUrl: `${input.appOrigin}${transferBasePath}/${uploadId}/commit`,
     };
   }
 
@@ -229,6 +239,43 @@ export class D1PdfRepository {
       ).bind(timestamp, pdfId),
     ]);
     return (results[0]?.meta.changes ?? 0) === 1;
+  }
+
+  async removeExpected(contentId: string, expectedPdfId: string, now = new Date()): Promise<PdfRemovalResult | null> {
+    const content = await this.db.prepare("SELECT current_pdf_id FROM content WHERE id = ?").bind(contentId).first<Row>();
+    if (!content) return null;
+    if (content.current_pdf_id === null) {
+      const previous = await this.db
+        .prepare("SELECT id FROM pdf_companion WHERE id = ? AND content_id = ?")
+        .bind(expectedPdfId, contentId)
+        .first<Row>();
+      if (previous) return { state: "none", removed: true, pdfId: expectedPdfId };
+      throw new Error("PDF companion not found");
+    }
+    if (String(content.current_pdf_id) !== expectedPdfId) throw new Error("PDF companion changed");
+    const timestamp = now.toISOString();
+    const results = await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE content
+              SET current_pdf_id = NULL,pdf_approved_html_version_id = NULL,updated_at = ?
+            WHERE id = ? AND current_pdf_id = ?`,
+        )
+        .bind(timestamp, contentId, expectedPdfId),
+      this.db
+        .prepare(
+          `UPDATE pdf_companion SET orphaned_at = COALESCE(orphaned_at,?)
+            WHERE id = ? AND changes() = 1
+              AND NOT EXISTS (SELECT 1 FROM content c WHERE c.current_pdf_id = pdf_companion.id)`,
+        )
+        .bind(timestamp, expectedPdfId),
+    ]);
+    if ((results[0]?.meta.changes ?? 0) !== 1) {
+      const current = await this.db.prepare("SELECT current_pdf_id FROM content WHERE id = ?").bind(contentId).first<Row>();
+      if (current?.current_pdf_id === null) return { state: "none", removed: true, pdfId: expectedPdfId };
+      throw new Error("PDF companion changed");
+    }
+    return { state: "none", removed: true, pdfId: expectedPdfId };
   }
 
   async stateForContent(contentId: string): Promise<PdfCompanionState> {

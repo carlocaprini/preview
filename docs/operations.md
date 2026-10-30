@@ -50,7 +50,9 @@ The final workflow runs only after a push to `main`; pull-request workflows neve
 
 No Cloudflare Access or Zero Trust organization is required. `/login` accepts only `OWNER_PASSWORD`; a successful login returns a 12-hour, host-only `Secure`, `HttpOnly`, `SameSite=Strict` cookie signed with domain separation from `SHARE_SIGNING_KEY`. Changing either secret invalidates existing sessions. Owner mutations also require an exact `Origin` match, preventing uploaded content from using the owner session for cross-site requests.
 
-`/mcp` and `/api/admin/uploads/*` accept `Authorization: Bearer <MCP_BEARER_TOKEN>`. No other administrative route accepts the machine token. Owner-preview assets use an expiring signed capability URL, so the owner cookie is never shared with `content.preview.carlocaprini.com`.
+`/mcp`, `/api/admin/uploads/*`, and the narrow `/api/mcp/*` content/PDF transfer routes accept `Authorization: Bearer <MCP_BEARER_TOKEN>`. The machine routes can only download the current declared asset or transfer a previously staged PDF upload; they do not grant access to arbitrary `/api/admin/*` operations. Owner-preview assets use an expiring signed capability URL, so the owner cookie is never shared with `content.preview.carlocaprini.com`.
+
+Local transfer commands default to `https://preview.carlocaprini.com` as the only origin allowed to receive `PREVIEW_MCP_TOKEN`. Set `PREVIEW_MCP_ORIGIN` to another explicit HTTPS origin only for a controlled staging environment. Transfer-plan URLs and IDs are validated before the helper sends the credential.
 
 Keep public `/`, `/assets/viewer.js`, `/api/public/measure`, application-origin `/s/*`, and content-origin `/s/*` unauthenticated. Before the first merge, verify anonymous rejection, owner login/logout, session expiry, Bearer-token rejection/acceptance, and content-origin isolation.
 
