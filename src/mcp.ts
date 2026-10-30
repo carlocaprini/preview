@@ -4,6 +4,7 @@ import { z } from "zod";
 import { D1PublishingRepository } from "./data/repository.ts";
 import { D1AssetStore } from "./data/assets.ts";
 import { D1AdminRepository } from "./data/admin.ts";
+import { D1ViewerRepository } from "./data/viewer.ts";
 import { PublishingService } from "./services/publishing.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "./types.ts";
 
@@ -32,6 +33,7 @@ function createServer(env: PreviewEnv): McpServer {
     env.SHARE_SIGNING_KEY,
   );
   const admin = new D1AdminRepository(env.DB, env.APP_ORIGIN, env.SHARE_SIGNING_KEY);
+  const viewer = new D1ViewerRepository(env.DB);
 
   server.registerTool(
     "preview_list_contents",
@@ -96,6 +98,38 @@ function createServer(env: PreviewEnv): McpServer {
       const links = await admin.listShareLinks({ contentId, state, labelQuery, limit, cursor });
       if (!links) throw new Error("Content not found");
       return result(links);
+    },
+  );
+
+  server.registerTool(
+    "preview_update_share_link_expiry",
+    {
+      description: "Change one existing non-revoked share link's expiry. Use null to make it indefinite.",
+      inputSchema: z.object({
+        linkId: z.string().uuid(),
+        expiresAt: z.union([z.iso.datetime({ offset: true }), z.null()]),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ linkId, expiresAt }) => {
+      const normalized = expiresAt === null ? null : new Date(expiresAt).toISOString();
+      const updated = await viewer.updateLinkExpiryState(linkId, normalized);
+      if (!updated) throw new Error("Share link not found");
+      return result(updated);
+    },
+  );
+
+  server.registerTool(
+    "preview_revoke_share_link",
+    {
+      description: "Irreversibly revoke one existing share link. Repeated calls preserve the original revocation timestamp.",
+      inputSchema: z.object({ linkId: z.string().uuid() }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ linkId }) => {
+      const revoked = await viewer.revokeLinkState(linkId);
+      if (!revoked) throw new Error("Share link not found");
+      return result(revoked);
     },
   );
 

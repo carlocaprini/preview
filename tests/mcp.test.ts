@@ -35,11 +35,18 @@ describe("stateless MCP contract", () => {
       "preview_get_content",
       "preview_list_contents",
       "preview_list_share_links",
+      "preview_revoke_share_link",
+      "preview_update_share_link_expiry",
       "preview_upload_version",
     ]);
     expect(listed.tools.find((tool) => tool.name === "preview_list_contents")?.annotations).toMatchObject({
       readOnlyHint: true,
       destructiveHint: false,
+    });
+    expect(listed.tools.find((tool) => tool.name === "preview_revoke_share_link")?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
     });
     await client.close();
   });

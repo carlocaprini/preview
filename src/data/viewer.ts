@@ -19,6 +19,13 @@ export interface ResolvedAsset {
   bytes: number;
 }
 
+export interface ManagedShareLinkState {
+  linkId: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  state: "active" | "expired" | "revoked";
+}
+
 type Row = Record<string, string | number | null>;
 
 export class D1ViewerRepository {
@@ -107,16 +114,56 @@ export class D1ViewerRepository {
   }
 
   async updateLinkExpiry(linkId: string, expiresAt: string | null): Promise<boolean> {
-    const result = await this.db.prepare("UPDATE share_link SET expires_at = ? WHERE id = ?").bind(expiresAt, linkId).run();
-    return (result.meta.changes ?? 0) === 1;
+    return (await this.updateLinkExpiryState(linkId, expiresAt)) !== null;
   }
 
   async revokeLink(linkId: string, now: Date): Promise<boolean> {
+    return (await this.revokeLinkState(linkId, now)) !== null;
+  }
+
+  async updateLinkExpiryState(linkId: string, expiresAt: string | null, now = new Date()): Promise<ManagedShareLinkState | null> {
     const result = await this.db
+      .prepare("UPDATE share_link SET expires_at = ? WHERE id = ? AND revoked_at IS NULL")
+      .bind(expiresAt, linkId)
+      .run();
+    if ((result.meta.changes ?? 0) !== 1) {
+      const existing = await this.linkState(linkId, now);
+      if (existing?.state === "revoked") throw new Error("Revoked links cannot be updated");
+      return null;
+    }
+    return this.linkState(linkId, now);
+  }
+
+  async revokeLinkState(
+    linkId: string,
+    now = new Date(),
+  ): Promise<{ linkId: string; revoked: true; revokedAt: string } | null> {
+    await this.db
       .prepare("UPDATE share_link SET revoked_at = COALESCE(revoked_at,?) WHERE id = ?")
       .bind(now.toISOString(), linkId)
       .run();
-    return (result.meta.changes ?? 0) === 1;
+    const row = await this.db.prepare("SELECT revoked_at FROM share_link WHERE id = ?").bind(linkId).first<Row>();
+    if (!row?.revoked_at) return null;
+    return { linkId, revoked: true, revokedAt: String(row.revoked_at) };
+  }
+
+  private async linkState(linkId: string, now: Date): Promise<ManagedShareLinkState | null> {
+    const row = await this.db
+      .prepare("SELECT id,expires_at,revoked_at FROM share_link WHERE id = ?")
+      .bind(linkId)
+      .first<Row>();
+    if (!row) return null;
+    return {
+      linkId: String(row.id),
+      expiresAt: row.expires_at === null ? null : String(row.expires_at),
+      revokedAt: row.revoked_at === null ? null : String(row.revoked_at),
+      state:
+        row.revoked_at !== null
+          ? "revoked"
+          : row.expires_at !== null && Date.parse(String(row.expires_at)) <= now.getTime()
+            ? "expired"
+            : "active",
+    };
   }
 
   private assetFromRow(row: Row): ResolvedAsset {
