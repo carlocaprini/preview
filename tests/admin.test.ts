@@ -149,3 +149,61 @@ describe("admin 30-day UTC history", () => {
     expect(await repo.contentDetail("missing", new Date("2026-01-01T00:00:00.000Z"))).toBeNull();
   });
 });
+
+describe("bounded MCP content discovery", () => {
+  it("searches literal title text and paginates deterministically across equal timestamps", async () => {
+    const database = new SqliteD1();
+    for (let index = 0; index < 53; index += 1) {
+      const id = `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+      database.raw.prepare("INSERT INTO content (id,title,created_at,updated_at) VALUES (?,?,?,?)")
+        .run(id, index === 52 ? "Kumbe 100%_literal" : `Kumbe ${index}`, "2026-01-01T00:00:00.000Z", "2026-10-30T08:00:00.000Z");
+    }
+    addContent(database, "unrelated");
+    const repo = repository(database);
+    const first = await repo.listContentsPage({ query: " Kumbe ", limit: 50, now: new Date("2026-10-30T09:00:00.000Z") });
+    const second = await repo.listContentsPage({ query: "Kumbe", limit: 50, cursor: first.nextCursor, now: new Date("2026-10-30T09:00:00.000Z") });
+
+    expect(first.contents).toHaveLength(50);
+    expect(second.contents).toHaveLength(3);
+    expect(second.nextCursor).toBeNull();
+    expect(new Set([...first.contents, ...second.contents].map((item) => item.contentId)).size).toBe(53);
+    expect((await repo.listContentsPage({ query: "%_literal" })).contents.map((item) => item.title)).toEqual(["Kumbe 100%_literal"]);
+  });
+
+  it("reports unpublished and active states without exposing private payload fields", async () => {
+    const database = new SqliteD1();
+    addContent(database, "draft-content");
+    addContent(database, "ready-content");
+    database.raw.prepare(
+      `INSERT INTO content_version
+        (id,content_id,sequence,status,source_format,manifest_json,total_bytes,created_at,activated_at,public_snapshot_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    ).run("version-1", "ready-content", 1, "ready", "html", '{"files":[],"totalBytes":0}', 0, "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z", "snapshot-1");
+    database.raw.prepare("UPDATE content SET active_version_id = ? WHERE id = ?").run("version-1", "ready-content");
+    addLink(database, "active-link", "ready-content", null, null);
+    addAggregate(database, "active-link", "2026-01-01", 7);
+
+    const page = await repository(database).listContentsPage({ now: new Date("2026-01-02T00:00:00.000Z") });
+    expect(page.contents.find((item) => item.contentId === "draft-content")).toMatchObject({
+      hasActiveHtml: false,
+      sourceFormat: null,
+    });
+    expect(page.contents.find((item) => item.contentId === "ready-content")).toMatchObject({
+      hasActiveHtml: true,
+      sourceFormat: "html",
+      activeLinkCount: 1,
+      meaningfulViews: 7,
+    });
+    expect(JSON.stringify(page)).not.toMatch(/token|url|manifest/iu);
+  });
+
+  it("rejects malformed and query-mismatched cursors", async () => {
+    const database = new SqliteD1();
+    addContent(database, "content-1");
+    addContent(database, "content-2");
+    const repo = repository(database);
+    await expect(repo.listContentsPage({ cursor: "not-json" })).rejects.toThrow("Invalid cursor");
+    const page = await repo.listContentsPage({ query: "Content", limit: 1 });
+    await expect(repo.listContentsPage({ query: "Other", cursor: page.nextCursor })).rejects.toThrow("Invalid cursor");
+  });
+});
