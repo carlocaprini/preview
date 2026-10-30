@@ -11,13 +11,17 @@ function utcDay(timestamp: number): string {
   return new Date(timestamp).toISOString().slice(0, 10);
 }
 
-function historyRange(now: Date): { days: string[]; endExclusive: string } {
+function utcRange(now: Date, length: number): { days: string[]; endExclusive: string } {
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const start = today - (HISTORY_DAYS - 1) * UTC_DAY_MS;
+  const start = today - (length - 1) * UTC_DAY_MS;
   return {
-    days: Array.from({ length: HISTORY_DAYS }, (_, index) => utcDay(start + index * UTC_DAY_MS)),
+    days: Array.from({ length }, (_, index) => utcDay(start + index * UTC_DAY_MS)),
     endExclusive: utcDay(today + UTC_DAY_MS),
   };
+}
+
+function historyRange(now: Date): { days: string[]; endExclusive: string } {
+  return utcRange(now, HISTORY_DAYS);
 }
 
 export interface ContentSummary {
@@ -72,6 +76,20 @@ export interface ContentMetadata {
     uploadedAt?: string;
     approvedVersionId?: string | null;
   };
+}
+
+export interface ContentAnalytics {
+  scope: { contentId: string; linkId: string | null };
+  allTime: {
+    meaningfulViews: number;
+    activeVisibleMs: number;
+    pdfDownloadsServed: number;
+    lastViewAt: string | null;
+    lastPdfDownloadAt: string | null;
+  };
+  range: { startDay: string; endDay: string; timezone: "UTC" };
+  daily: Array<{ day: string; meaningfulViews: number; activeVisibleMs: number; pdfDownloadsServed: number }>;
+  meaning: string;
 }
 
 interface ContentCursor {
@@ -211,6 +229,78 @@ export class D1AdminRepository {
         ...(pdf.uploadedAt ? { uploadedAt: pdf.uploadedAt } : {}),
         ...(pdf.approvedVersionId !== undefined ? { approvedVersionId: pdf.approvedVersionId } : {}),
       },
+    };
+  }
+
+  async contentAnalytics(input: {
+    contentId: string;
+    linkId?: string | null;
+    days?: 7 | 30 | 90;
+    now?: Date;
+  }): Promise<ContentAnalytics | null> {
+    const content = await this.db.prepare("SELECT id FROM content WHERE id = ?").bind(input.contentId).first<Row>();
+    if (!content) return null;
+    if (input.linkId) {
+      const link = await this.db
+        .prepare("SELECT id FROM share_link WHERE id = ? AND content_id = ?")
+        .bind(input.linkId, input.contentId)
+        .first<Row>();
+      if (!link) throw new Error("Share link not found for this content");
+    }
+    const days = input.days ?? 30;
+    if (![7, 30, 90].includes(days)) throw new Error("Days must be 7, 30 or 90");
+    const range = utcRange(input.now ?? new Date(), days);
+    const linkFilter = input.linkId ? "AND sl.id = ?" : "";
+    const linkBindings = input.linkId ? [input.linkId] : [];
+    const [totals, daily] = await Promise.all([
+      this.db
+        .prepare(
+          `SELECT COALESCE(SUM(da.meaningful_views),0) AS meaningful_views,
+                  COALESCE(SUM(da.active_visible_ms),0) AS active_visible_ms,
+                  COALESCE(SUM(da.pdf_downloads_served),0) AS pdf_downloads_served,
+                  MAX(da.last_view_at) AS last_view_at,
+                  MAX(da.last_pdf_download_at) AS last_pdf_download_at
+             FROM share_link sl LEFT JOIN daily_aggregate da ON da.share_link_id = sl.id
+            WHERE sl.content_id = ? ${linkFilter}`,
+        )
+        .bind(input.contentId, ...linkBindings)
+        .first<Row>(),
+      this.db
+        .prepare(
+          `SELECT da.day,SUM(da.meaningful_views) AS meaningful_views,
+                  SUM(da.active_visible_ms) AS active_visible_ms,
+                  SUM(da.pdf_downloads_served) AS pdf_downloads_served
+             FROM share_link sl JOIN daily_aggregate da ON da.share_link_id = sl.id
+            WHERE sl.content_id = ? ${linkFilter} AND da.day >= ? AND da.day < ?
+         GROUP BY da.day ORDER BY da.day ASC`,
+        )
+        .bind(input.contentId, ...linkBindings, range.days[0], range.endExclusive)
+        .all<Row>(),
+    ]);
+    const recorded = new Map(daily.results.map((row) => [String(row.day), row]));
+    return {
+      scope: { contentId: input.contentId, linkId: input.linkId ?? null },
+      allTime: {
+        meaningfulViews: Number(totals?.meaningful_views ?? 0),
+        activeVisibleMs: Number(totals?.active_visible_ms ?? 0),
+        pdfDownloadsServed: Number(totals?.pdf_downloads_served ?? 0),
+        lastViewAt: totals?.last_view_at === null || totals?.last_view_at === undefined ? null : String(totals.last_view_at),
+        lastPdfDownloadAt:
+          totals?.last_pdf_download_at === null || totals?.last_pdf_download_at === undefined
+            ? null
+            : String(totals.last_pdf_download_at),
+      },
+      range: { startDay: range.days[0]!, endDay: range.days.at(-1)!, timezone: "UTC" },
+      daily: range.days.map((day) => {
+        const row = recorded.get(day);
+        return {
+          day,
+          meaningfulViews: Number(row?.meaningful_views ?? 0),
+          activeVisibleMs: Number(row?.active_visible_ms ?? 0),
+          pdfDownloadsServed: Number(row?.pdf_downloads_served ?? 0),
+        };
+      }),
+      meaning: "Aggregated measurements, not identified or unique readers. PDF downloads count completed server deliveries.",
     };
   }
 

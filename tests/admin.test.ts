@@ -257,3 +257,54 @@ describe("MCP content metadata", () => {
     expect(await repository(database).contentMetadata("missing-content")).toBeNull();
   });
 });
+
+describe("MCP aggregate analytics", () => {
+  it("zero-fills exact UTC windows and keeps all-time totals distinct", async () => {
+    const database = new SqliteD1();
+    addContent(database, "analytics-content");
+    addLink(database, "link-a", "analytics-content", null, null);
+    addLink(database, "link-b", "analytics-content", null, null);
+    addAggregate(database, "link-a", "2023-01-01", 11, 110, 1);
+    addAggregate(database, "link-a", "2024-02-29", 2, 200, 3);
+    addAggregate(database, "link-b", "2024-02-29", 4, 400, 5);
+    database.raw.prepare("UPDATE daily_aggregate SET last_pdf_download_at = ? WHERE share_link_id = ? AND day = ?")
+      .run("2024-02-29T13:00:00.000Z", "link-b", "2024-02-29");
+
+    const analytics = await repository(database).contentAnalytics({
+      contentId: "analytics-content",
+      days: 7,
+      now: new Date("2024-03-01T23:59:59.000Z"),
+    });
+
+    expect(analytics?.daily).toHaveLength(7);
+    expect(analytics?.range).toEqual({ startDay: "2024-02-24", endDay: "2024-03-01", timezone: "UTC" });
+    expect(analytics?.daily.find((item) => item.day === "2024-02-29")).toEqual({
+      day: "2024-02-29",
+      meaningfulViews: 6,
+      activeVisibleMs: 600,
+      pdfDownloadsServed: 8,
+    });
+    expect(analytics?.allTime).toMatchObject({ meaningfulViews: 17, activeVisibleMs: 710, pdfDownloadsServed: 9 });
+  });
+
+  it("scopes results to a link and rejects cross-document link IDs", async () => {
+    const database = new SqliteD1();
+    addContent(database, "content-a");
+    addContent(database, "content-b");
+    addLink(database, "link-a", "content-a", null, null);
+    addLink(database, "link-b", "content-b", null, null);
+    addAggregate(database, "link-a", "2026-10-30", 2, 20, 1);
+    addAggregate(database, "link-b", "2026-10-30", 99, 990, 9);
+
+    const scoped = await repository(database).contentAnalytics({
+      contentId: "content-a",
+      linkId: "link-a",
+      days: 30,
+      now: new Date("2026-10-30T12:00:00.000Z"),
+    });
+    expect(scoped?.allTime).toMatchObject({ meaningfulViews: 2, activeVisibleMs: 20, pdfDownloadsServed: 1 });
+    await expect(repository(database).contentAnalytics({ contentId: "content-a", linkId: "link-b" }))
+      .rejects.toThrow("Share link not found for this content");
+    expect(await repository(database).contentAnalytics({ contentId: "missing" })).toBeNull();
+  });
+});
