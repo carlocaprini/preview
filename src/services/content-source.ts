@@ -4,6 +4,11 @@ import { normalizeAssetPath } from "../security/paths.ts";
 
 const MAX_INLINE_TEXT_BYTES = 64 * 1024;
 
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes.slice().buffer as ArrayBuffer));
+  return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function isText(mediaType: string): boolean {
   const normalized = mediaType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
   return normalized.startsWith("text/") ||
@@ -40,6 +45,7 @@ export class ContentSourceService {
     const stored = await this.readStored(expectedActiveVersionId, record);
     const bytes = new Uint8Array(await new Response(stored.body).arrayBuffer());
     if (bytes.byteLength !== record.size) throw new Error("Stored file size does not match its manifest");
+    if (await sha256Hex(bytes) !== record.sha256) throw new Error("Stored file digest does not match its manifest");
     let text: string;
     try {
       text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);

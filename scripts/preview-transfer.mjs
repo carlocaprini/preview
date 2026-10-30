@@ -3,6 +3,7 @@ import { constants as fsConstants } from "node:fs";
 import { copyFile, lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { extname, basename, dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { unzipSync } from "fflate";
 
 const MEDIA_TYPES = {
@@ -43,6 +44,20 @@ function mediaType(path) {
   return value;
 }
 
+export function trustedOrigin() {
+  const url = new URL(process.env.PREVIEW_MCP_ORIGIN ?? "https://preview.carlocaprini.com");
+  if (url.protocol !== "https:" || url.pathname !== "/" || url.search || url.hash) {
+    throw new Error("PREVIEW_MCP_ORIGIN must be an HTTPS origin");
+  }
+  return url.origin;
+}
+
+function exactTransferUrl(value, expected) {
+  const actual = new URL(value);
+  if (actual.href !== expected) throw new Error("Transfer plan contains an unexpected destination");
+  return actual;
+}
+
 async function loadPackage(path) {
   const bytes = new Uint8Array(await readFile(path));
   if (extname(path).toLowerCase() === ".html") return new Map([["index.html", bytes]]);
@@ -73,6 +88,9 @@ async function upload(sourcePath, planPath) {
 
   const files = await loadPackage(sourcePath);
   const plan = JSON.parse(await readFile(planPath, "utf8"));
+  const origin = trustedOrigin();
+  if (typeof plan.uploadId !== "string") throw new Error("Invalid transfer plan");
+  const transferBase = `${origin}/api/admin/uploads/${encodeURIComponent(plan.uploadId)}`;
   const planned = new Map(plan.files.map((file) => [file.path, file]));
   if (planned.size !== files.size) throw new Error("Local package does not match the transfer plan");
 
@@ -82,7 +100,8 @@ async function upload(sourcePath, planPath) {
     if (!target || target.size !== bytes.byteLength || target.mediaType !== mediaType(path)) {
       throw new Error(`Local asset does not match the transfer plan: ${path}`);
     }
-    const response = await fetch(target.uploadUrl, {
+    const expectedUploadUrl = `${transferBase}/files/${path.split("/").map(encodeURIComponent).join("/")}`;
+    const response = await fetch(exactTransferUrl(target.uploadUrl, expectedUploadUrl), {
       method: "PUT",
       headers: { ...authHeaders, "Content-Type": target.mediaType, "Content-Length": String(bytes.byteLength) },
       body: bytes,
@@ -90,7 +109,7 @@ async function upload(sourcePath, planPath) {
     if (!response.ok) throw new Error(`Upload failed for ${path}: ${response.status} ${await response.text()}`);
   }
 
-  const committed = await fetch(plan.commitUrl, { method: "POST", headers: authHeaders });
+  const committed = await fetch(exactTransferUrl(plan.commitUrl, `${transferBase}/commit`), { method: "POST", headers: authHeaders });
   if (!committed.ok) throw new Error(`Commit failed: ${committed.status} ${await committed.text()}`);
   process.stdout.write(`${JSON.stringify(await committed.json())}\n`);
 }
@@ -127,7 +146,7 @@ async function responseBytes(response, expectedBytes) {
   return output;
 }
 
-async function download(planPath, destinationPath) {
+export async function download(planPath, destinationPath) {
   const token = process.env.PREVIEW_MCP_TOKEN;
   if (!token) throw new Error("PREVIEW_MCP_TOKEN is required");
   const plan = JSON.parse(await readFile(planPath, "utf8"));
@@ -135,10 +154,8 @@ async function download(planPath, destinationPath) {
     throw new Error("Invalid content transfer plan");
   }
   if (plan.files.length < 1 || plan.files.length > 50) throw new Error("Invalid content transfer plan file count");
-  const baseOrigin = new URL(plan.transfer?.baseOrigin);
-  if (baseOrigin.protocol !== "https:" || baseOrigin.pathname !== "/" || baseOrigin.search || baseOrigin.hash) {
-    throw new Error("Transfer plan origin must be an HTTPS origin");
-  }
+  const baseOrigin = new URL(trustedOrigin());
+  if (plan.transfer?.baseOrigin !== baseOrigin.origin) throw new Error("Transfer plan contains an unexpected origin");
   const files = [];
   const collisionKeys = new Set();
   let totalBytes = 0;
@@ -198,8 +215,9 @@ async function download(planPath, destinationPath) {
   }
 }
 
-const [, , command, sourcePath, planPath] = process.argv;
-try {
+export async function main(argv = process.argv) {
+  const [, , command, sourcePath, planPath] = argv;
+  try {
   if (command === "manifest" && sourcePath) {
     const files = await loadPackage(sourcePath);
     process.stdout.write(`${JSON.stringify({ title: basename(sourcePath, extname(sourcePath)), ...describe(files, sourcePath) }, null, 2)}\n`);
@@ -210,6 +228,11 @@ try {
   } else {
     fail("Usage: preview-transfer manifest <file.html|bundle.zip> | upload <source> <transfer-plan.json> | download <transfer-plan.json> <destination>");
   }
-} catch (error) {
-  fail(error instanceof Error ? error.message : "Transfer failed");
+  } catch (error) {
+    fail(error instanceof Error ? error.message : "Transfer failed");
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
 }

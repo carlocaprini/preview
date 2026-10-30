@@ -769,6 +769,10 @@ describe("public and owner viewing", () => {
     const stale = url.replace(plan.versionId, "00000000-0000-4000-8000-000000000000");
     expect((await handleRequest(new Request(stale, { headers: { Authorization: `Bearer ${env.MCP_BEARER_TOKEN}` } }), env, anonymous)).status)
       .toBe(404);
+    database.raw.prepare("UPDATE asset_chunk SET bytes = ? WHERE version_id = ? AND path = ? AND chunk_index = 0")
+      .run(bytes("<h1>Other</h1>"), plan.versionId, "index.html");
+    await expect(service.readText(plan.contentId, plan.versionId, "index.html"))
+      .rejects.toThrow("Stored file digest does not match its manifest");
     expect(database.raw.prepare("SELECT COUNT(*) AS count FROM daily_aggregate").get()).toEqual({ count: 0 });
   });
 });
