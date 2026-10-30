@@ -44,6 +44,18 @@ node scripts/preview-transfer.mjs download ./content-transfer-plan.json ./curren
 
 The helper sends `PREVIEW_MCP_TOKEN` only to the configured app origin, verifies every path, byte count and SHA-256 digest, and refuses to overwrite an existing destination. Private source retrieval never uses a public share link, renders uploaded HTML, or creates analytics activity.
 
+## PDF companion lifecycle
+
+`preview_start_pdf_upload` creates a guarded new/replacement upload plan for a `.pdf` file from 1 byte through 10 MiB. Save the plan and transfer the real local bytes with:
+
+```sh
+node scripts/preview-transfer.mjs pdf-upload ./analysis.pdf ./pdf-transfer-plan.json
+```
+
+The helper validates the local byte count and `%PDF-` signature, uploads with the same MCP Bearer and commits before reporting success. A currently approved PDF remains public until a replacement commit succeeds.
+
+Activating new HTML deliberately makes the retained PDF `outdated` and unavailable to recipients. Use `preview_confirm_pdf_reuse` only after explicitly deciding that the exact `pdfId` is still correct for the exact `expectedActiveVersionId`. Use `preview_remove_pdf` with `expectedPdfId` to detach it; stale removal cannot delete a newer replacement. Removal is destructive for current availability but preserves historical delivery aggregates, while physical orphan chunks remain subject to the existing cleanup grace period.
+
 The first two accept a validated manifest and return short-lived authenticated per-file upload URLs plus a commit URL. A remote Worker cannot dereference a path on the Codex machine, so real file bytes move through the local sideband helper:
 
 ```sh

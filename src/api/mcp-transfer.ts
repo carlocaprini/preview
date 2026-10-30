@@ -1,9 +1,27 @@
-import { apiError } from "../http.ts";
+import { D1PdfRepository } from "../data/pdf.ts";
+import { apiError, json } from "../http.ts";
 import { ContentSourceService } from "../services/content-source.ts";
 import type { PreviewEnv } from "../types.ts";
 
 export async function routeMcpTransferApi(request: Request, env: PreviewEnv): Promise<Response | null> {
   const url = new URL(request.url);
+  const pdfData = url.pathname.match(/^\/api\/mcp\/pdf\/uploads\/([^/]+)\/data$/u);
+  if (request.method === "PUT" && pdfData?.[1]) {
+    try {
+      await new D1PdfRepository(env.DB).uploadData(pdfData[1], request.body);
+      return new Response(null, { status: 204 });
+    } catch {
+      return apiError("pdf_rejected", "PDF upload was rejected", 400);
+    }
+  }
+  const pdfCommit = url.pathname.match(/^\/api\/mcp\/pdf\/uploads\/([^/]+)\/commit$/u);
+  if (request.method === "POST" && pdfCommit?.[1]) {
+    try {
+      return json({ pdfCompanion: await new D1PdfRepository(env.DB).commit(pdfCommit[1]) });
+    } catch {
+      return apiError("pdf_commit_conflict", "PDF upload could not be committed", 409);
+    }
+  }
   const match = url.pathname.match(/^\/api\/mcp\/contents\/([^/]+)\/versions\/([^/]+)\/files\/(.+)$/u);
   if (request.method !== "GET" || !match?.[1] || !match[2] || !match[3]) return null;
   try {

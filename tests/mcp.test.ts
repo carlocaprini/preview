@@ -59,6 +59,7 @@ describe("stateless MCP contract", () => {
     await client.connect(transport);
     const listed = await client.listTools();
     expect(listed.tools.map((tool) => tool.name).sort()).toEqual([
+      "preview_confirm_pdf_reuse",
       "preview_create_content",
       "preview_create_share_link",
       "preview_get_analytics",
@@ -67,7 +68,9 @@ describe("stateless MCP contract", () => {
       "preview_list_contents",
       "preview_list_share_links",
       "preview_read_content_file",
+      "preview_remove_pdf",
       "preview_revoke_share_link",
+      "preview_start_pdf_upload",
       "preview_update_share_link_expiry",
       "preview_upload_version",
     ]);
@@ -76,6 +79,11 @@ describe("stateless MCP contract", () => {
       destructiveHint: false,
     });
     expect(listed.tools.find((tool) => tool.name === "preview_revoke_share_link")?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+    });
+    expect(listed.tools.find((tool) => tool.name === "preview_remove_pdf")?.annotations).toMatchObject({
       readOnlyHint: false,
       destructiveHint: true,
       idempotentHint: true,
