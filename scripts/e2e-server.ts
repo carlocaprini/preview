@@ -120,13 +120,13 @@ createServer(async (request, response) => {
   const share = url.pathname.match(/^\/s\/(.+)$/u);
   if (request.method === "GET" && share?.[1]) {
     const resolved = await viewer.resolveSharedView(share[1]);
-    if (resolved.state !== "active" || !resolved.snapshotId) {
+    if (resolved.state !== "active" || !resolved.contentId || !resolved.snapshotId) {
       return send(response, unavailablePage(), "text/html; charset=utf-8", resolved.state === "invalid" ? 404 : 410);
     }
     const source = `${contentOrigin}/s/${encodeURIComponent(share[1])}/v/${resolved.snapshotId}/index.html`;
     return send(
       response,
-      viewerPage(source, { token: share[1], snapshotId: resolved.snapshotId }),
+      viewerPage(source, { token: share[1], contentId: resolved.contentId, snapshotId: resolved.snapshotId }),
       "text/html; charset=utf-8",
     );
   }
@@ -148,7 +148,12 @@ createServer(async (request, response) => {
     const pdfUrl = url.searchParams.get("pdf") === "1" ? "/s/test-token/pdf" : undefined;
     return send(
       response,
-      viewerPage(`http://127.0.0.1:${port}/content?theme=${theme}`, { token: "test-token", snapshotId: "snapshot", pdfUrl }),
+      viewerPage(`http://127.0.0.1:${port}/content?theme=${theme}`, {
+        token: "test-token",
+        contentId: "550e8400-e29b-41d4-a716-446655440000",
+        snapshotId: "snapshot",
+        pdfUrl,
+      }),
       "text/html; charset=utf-8",
     );
   }

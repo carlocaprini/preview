@@ -5,7 +5,12 @@ const homepage = await fetch(`${appOrigin}/`, { redirect: "manual" });
 assert(homepage.status === 200, `Homepage returned ${homepage.status}`);
 assert((homepage.headers.get("referrer-policy") ?? "") === "no-referrer", "Homepage referrer policy is missing");
 assert((homepage.headers.get("cache-control") ?? "").includes("no-store"), "Homepage cache policy is unsafe");
-assert((await homepage.text()).includes("Ideas, experiments and work worth sharing."), "Homepage brand copy is missing");
+const homepageBody = await homepage.text();
+assert(homepageBody.includes("Ideas, experiments and work worth sharing."), "Homepage brand copy is missing");
+assert(
+  homepageBody.includes("utm_source=preview&amp;utm_medium=referral&amp;utm_campaign=public_pages&amp;utm_content=home"),
+  "Homepage site referrals are missing canonical Preview attribution",
+);
 
 const admin = await fetch(`${appOrigin}/admin`, { redirect: "manual" });
 assert(admin.status === 303, `Anonymous admin access returned ${admin.status}`);
