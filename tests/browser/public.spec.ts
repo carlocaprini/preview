@@ -5,9 +5,10 @@ test("homepage uses the compact Preview header and canonical website actions", a
   const header = page.locator("header.top");
   await expect(header.getByRole("link", { name: "Preview" })).toHaveAttribute("href", "/");
   await expect(header.getByText("Carlo Caprini")).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Explore work" })).toHaveAttribute("href", "https://carlocaprini.com/work/");
-  await expect(page.getByRole("link", { name: "Explore thinking" })).toHaveAttribute("href", "https://carlocaprini.com/thinking/");
-  await expect(page.getByRole("link", { name: "Get in touch" })).toHaveAttribute("href", "https://carlocaprini.com/#contact");
+  const homeUtm = "utm_source=preview&utm_medium=referral&utm_campaign=public_pages&utm_content=home";
+  await expect(page.getByRole("link", { name: "Explore work" })).toHaveAttribute("href", `https://carlocaprini.com/work/?${homeUtm}`);
+  await expect(page.getByRole("link", { name: "Explore thinking" })).toHaveAttribute("href", `https://carlocaprini.com/thinking/?${homeUtm}`);
+  await expect(page.getByRole("link", { name: "Get in touch" })).toHaveAttribute("href", `https://carlocaprini.com/?${homeUtm}#contact`);
   await page.keyboard.press("Tab");
   await expect(header.getByRole("link", { name: "Preview" })).toBeFocused();
   await page.keyboard.press("Tab");
@@ -27,12 +28,14 @@ test("public shell keeps attribution and full-height light and dark content fram
     await expect(header.getByRole("link", { name: "Preview" })).toBeVisible();
     await expect(header.getByText("Shared preview")).toHaveCount(0);
     await expect(header.getByRole("link", { name: "Download PDF" })).toHaveCount(pdf ? 1 : 0);
+    if (pdf) await expect(header.getByRole("link", { name: "Download PDF" })).not.toHaveAttribute("href", /utm_/u);
     await expect(attribution).toContainText(/Preview built by\s*Carlo Caprini\s*·\s*Explore work/u);
     await expect(attribution.getByText("Shared by Carlo Caprini")).toHaveCount(0);
     const builder = attribution.getByRole("link", { name: "Carlo Caprini" });
     const work = attribution.getByRole("link", { name: "Explore work" });
-    await expect(builder).toHaveAttribute("href", "https://carlocaprini.com/");
-    await expect(work).toHaveAttribute("href", "https://carlocaprini.com/work/");
+    const documentUtm = "utm_source=preview&utm_medium=referral&utm_campaign=shared_content&utm_content=doc_550e8400e29b41d4a716446655440000";
+    await expect(builder).toHaveAttribute("href", `https://carlocaprini.com/?${documentUtm}`);
+    await expect(work).toHaveAttribute("href", `https://carlocaprini.com/work/?${documentUtm}`);
     for (const link of [builder, work]) {
       await expect(link).toHaveAttribute("target", "_blank");
       await expect(link).toHaveAttribute("rel", "noopener noreferrer");
@@ -188,4 +191,8 @@ test("unavailable state never distinguishes expiry from revocation", async ({ pa
   await expect(page.locator("header.top").getByRole("link", { name: "Preview" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "This preview is no longer available." })).toBeVisible();
   await expect(page.getByText("expired or the content may no longer be shared")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Explore work" })).toHaveAttribute(
+    "href",
+    "https://carlocaprini.com/work/?utm_source=preview&utm_medium=referral&utm_campaign=public_pages&utm_content=unavailable",
+  );
 });

@@ -14,6 +14,24 @@ const env = {
 
 const context = { waitUntil() {}, passThroughOnException() {}, props: {} } as unknown as PreviewExecutionContext;
 
+function anchorHref(page: string, label: string): string {
+  const match = page.match(new RegExp(`<a[^>]+href="([^"]+)"[^>]*>${label}</a>`, "u"));
+  if (!match?.[1]) throw new Error(`Missing ${label} link`);
+  return match[1].replaceAll("&amp;", "&");
+}
+
+function expectPublicAttribution(href: string, pathname: string, content: "home" | "unavailable" | "not_found", hash = "") {
+  const url = new URL(href);
+  expect(url.pathname).toBe(pathname);
+  expect(url.hash).toBe(hash);
+  expect(Object.fromEntries(url.searchParams)).toMatchObject({
+    utm_source: "preview",
+    utm_medium: "referral",
+    utm_campaign: "public_pages",
+    utm_content: content,
+  });
+}
+
 async function loginCookie(password = env.OWNER_PASSWORD): Promise<string | null> {
   const response = await handleRequest(
     new Request("https://app.test/api/auth/login", {
@@ -33,10 +51,20 @@ describe("origin and authentication routing", () => {
     expect(response.status).toBe(200);
     const body = await response.text();
     expect(body).toContain("Ideas, experiments and work worth sharing.");
-    expect(body).toContain('href="https://carlocaprini.com/work/">Explore work</a>');
-    expect(body).toContain('href="https://carlocaprini.com/thinking/">Explore thinking</a>');
+    expectPublicAttribution(anchorHref(body, "Explore work"), "/work/", "home");
+    expectPublicAttribution(anchorHref(body, "Explore thinking"), "/thinking/", "home");
+    expectPublicAttribution(anchorHref(body, "Get in touch"), "/", "home", "#contact");
     expect(body).not.toContain(">Carlo Caprini</a>");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
+  it("distinguishes unavailable shares from generic public not-found attribution", async () => {
+    const unavailable = await handleRequest(new Request("https://app.test/s/not-a-token"), env, context);
+    const notFound = await handleRequest(new Request("https://app.test/does-not-exist"), env, context);
+    expect(unavailable.status).toBe(404);
+    expect(notFound.status).toBe(404);
+    expectPublicAttribution(anchorHref(await unavailable.text(), "Explore work"), "/work/", "unavailable");
+    expectPublicAttribution(anchorHref(await notFound.text(), "Explore work"), "/work/", "not_found");
   });
 
   it("redirects an anonymous owner to the local login page", async () => {

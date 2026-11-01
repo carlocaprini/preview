@@ -1,3 +1,5 @@
+import { siteReferralUrl, type PublicSitePage } from "../domain/site-links.ts";
+
 function escapeHtml(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
@@ -27,7 +29,11 @@ function document(title: string, body: string): string {
 }
 
 export function homePage(): string {
-  return document("Preview — Carlo Caprini", `<div class="page">${header("/")}<main><div class="home-copy"><h1>Ideas, experiments and work worth sharing.</h1><p>Interactive HTML experiences shared simply and privately.</p><div class="home-actions"><a class="cta" href="https://carlocaprini.com/work/">Explore work</a><a class="cta secondary" href="https://carlocaprini.com/thinking/">Explore thinking</a></div><p class="lost">Lost the link to something I shared with you? <a href="https://carlocaprini.com/#contact">Get in touch</a> and I’ll help you find it.</p><p class="attribution">A personal sharing space by Carlo Caprini.</p></div></main></div>`);
+  const attribution = { page: "home" as const };
+  const work = siteReferralUrl("/work/", attribution);
+  const thinking = siteReferralUrl("/thinking/", attribution);
+  const contact = siteReferralUrl("/#contact", attribution);
+  return document("Preview — Carlo Caprini", `<div class="page">${header("/")}<main><div class="home-copy"><h1>Ideas, experiments and work worth sharing.</h1><p>Interactive HTML experiences shared simply and privately.</p><div class="home-actions"><a class="cta" href="${escapeHtml(work)}">Explore work</a><a class="cta secondary" href="${escapeHtml(thinking)}">Explore thinking</a></div><p class="lost">Lost the link to something I shared with you? <a href="${escapeHtml(contact)}">Get in touch</a> and I’ll help you find it.</p><p class="attribution">A personal sharing space by Carlo Caprini.</p></div></main></div>`);
 }
 
 export function adminPage(): string {
@@ -38,12 +44,19 @@ export function loginPage(): string {
   return `<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>Preview — Accesso</title><style>${styles}${adminStyles}${loginStyles}</style><script src="/assets/login.js" defer></script></head><body class="login"><div class="login-shell">${header("/")}<main class="login-card"><h1>Accedi</h1><p>Inserisci la password privata di Preview.</p><form id="login-form"><label>Password<input name="password" type="password" required maxlength="512" autocomplete="current-password" autofocus></label><button class="button" type="submit">Accedi</button><p id="login-message" class="login-message" role="alert" hidden></p></form></main></div></body></html>`;
 }
 
-export function unavailablePage(): string {
-  return document("Preview unavailable — Carlo Caprini", `<div class="page">${header("/")}<main><div><h1 class="message-title">This preview is no longer available.</h1><p>The link may have expired or the content may no longer be shared.</p><a class="cta" href="https://carlocaprini.com/work/">Explore work</a></div></main></div>`);
+export function unavailablePage(page: Extract<PublicSitePage, "unavailable" | "not_found"> = "unavailable"): string {
+  const work = siteReferralUrl("/work/", { page });
+  return document("Preview unavailable — Carlo Caprini", `<div class="page">${header("/")}<main><div><h1 class="message-title">This preview is no longer available.</h1><p>The link may have expired or the content may no longer be shared.</p><a class="cta" href="${escapeHtml(work)}">Explore work</a></div></main></div>`);
 }
 
-export function viewerPage(iframeSource: string, measurement?: { token: string; snapshotId: string; pdfUrl?: string }): string {
+export function viewerPage(
+  iframeSource: string,
+  measurement?: { token: string; contentId: string; snapshotId: string; pdfUrl?: string },
+): string {
+  const attribution = measurement ? { contentId: measurement.contentId } : null;
+  const builder = attribution ? siteReferralUrl("/", attribution) : "https://carlocaprini.com/";
+  const work = attribution ? siteReferralUrl("/work/", attribution) : "https://carlocaprini.com/work/";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>Shared preview — Carlo Caprini</title><style>${styles}
 html,body{height:100%;overflow:hidden}.viewer{height:100%;display:grid;grid-template-rows:3.5rem minmax(0,1fr) minmax(2.75rem,auto)}.viewer .top{width:100%;min-height:3.5rem;padding:.45rem 1rem;background:var(--paper)}.pdf-download{display:inline-flex;align-items:center;min-height:2.5rem;padding:.4rem .65rem;border:1px solid var(--line);border-radius:.55rem;color:var(--ink);font-size:.78rem;font-weight:750;text-decoration:none}.viewer-frame{display:block;width:100%;height:100%;border:0;background:white}.viewer-attribution{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:0 .4rem;min-width:0;min-height:2.75rem;padding:0 1rem;border-top:1px solid var(--line);background:var(--paper);color:var(--muted);font-size:.7rem;line-height:1.25}.viewer-attribution span,.viewer-attribution a{display:inline-flex;align-items:center;min-height:2.5rem}.viewer-attribution a{color:var(--ink);font-weight:700;text-decoration:none}.viewer-attribution a:focus-visible{outline:0;border-radius:.2rem;box-shadow:inset 0 0 0 3px #12a5bd}.viewer-attribution .work-referral{color:var(--cyan)}@media(max-width:40rem){.viewer .top{padding:.45rem .7rem}.viewer-attribution{padding-inline:.7rem}}@media(max-width:22rem){.viewer-attribution{justify-content:flex-start}}
-</style>${measurement ? `<script src="/assets/viewer.js" data-token="${escapeHtml(measurement.token)}" data-snapshot="${escapeHtml(measurement.snapshotId)}" defer></script>` : ""}</head><body><div class="viewer"><header class="top"><a class="mark" href="/">Preview</a>${measurement?.pdfUrl ? `<a class="pdf-download" href="${escapeHtml(measurement.pdfUrl)}">Download PDF</a>` : ""}</header><iframe class="viewer-frame" title="Shared interactive content" src="${escapeHtml(iframeSource)}" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups" referrerpolicy="no-referrer"></iframe><footer class="viewer-attribution"><span>Preview built by&nbsp;<a href="https://carlocaprini.com/" target="_blank" rel="noopener noreferrer">Carlo Caprini</a></span><span aria-hidden="true">·</span><a class="work-referral" href="https://carlocaprini.com/work/" target="_blank" rel="noopener noreferrer">Explore work</a></footer></div></body></html>`;
+</style>${measurement ? `<script src="/assets/viewer.js" data-token="${escapeHtml(measurement.token)}" data-snapshot="${escapeHtml(measurement.snapshotId)}" defer></script>` : ""}</head><body><div class="viewer"><header class="top"><a class="mark" href="/">Preview</a>${measurement?.pdfUrl ? `<a class="pdf-download" href="${escapeHtml(measurement.pdfUrl)}">Download PDF</a>` : ""}</header><iframe class="viewer-frame" title="Shared interactive content" src="${escapeHtml(iframeSource)}" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups" referrerpolicy="no-referrer"></iframe><footer class="viewer-attribution"><span>Preview built by&nbsp;<a href="${escapeHtml(builder)}" target="_blank" rel="noopener noreferrer">Carlo Caprini</a></span><span aria-hidden="true">·</span><a class="work-referral" href="${escapeHtml(work)}" target="_blank" rel="noopener noreferrer">Explore work</a></footer></div></body></html>`;
 }

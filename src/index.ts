@@ -137,19 +137,20 @@ async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecution
       new D1AssetStore(env.DB),
       env.SHARE_SIGNING_KEY,
     ).resolveSharedView(token);
-    if (resolved.state !== "active" || !resolved.snapshotId) {
+    if (resolved.state !== "active" || !resolved.contentId || !resolved.snapshotId) {
       const status = resolved.state === "invalid" ? 404 : 410;
       return applyHeaders(html(unavailablePage(), status), appHeaders(env));
     }
     const source = `${env.CONTENT_ORIGIN}/s/${encodeURIComponent(token)}/v/${resolved.snapshotId}/index.html`;
     return applyHeaders(html(viewerPage(source, {
       token,
+      contentId: resolved.contentId,
       snapshotId: resolved.snapshotId,
       pdfUrl: resolved.hasPdf ? `/s/${encodeURIComponent(token)}/pdf` : undefined,
     })), appHeaders(env));
   }
 
-  return applyHeaders(html(unavailablePage(), 404), appHeaders(env));
+  return applyHeaders(html(unavailablePage("not_found"), 404), appHeaders(env));
 }
 
 async function routeContent(
@@ -174,13 +175,13 @@ async function routeContent(
   if (request.method === "GET" && owner?.[1] && owner[2] && owner[3]) {
     const authorized = await parseOwnerPreviewToken(owner[1], env.SHARE_SIGNING_KEY);
     if (!authorized || authorized.snapshotId !== owner[2]) {
-      return applyHeaders(html(unavailablePage(), 404), contentHeaders(env, "text/html; charset=utf-8"));
+      return applyHeaders(html(unavailablePage("not_found"), 404), contentHeaders(env, "text/html; charset=utf-8"));
     }
     const asset = await service.getOwnerAsset(authorized.contentId, owner[2], owner[3]);
     if (asset) return applyHeaders(new Response(asset.body), contentHeaders(env, asset.mediaType));
   }
 
-  return applyHeaders(html(unavailablePage(), 404), contentHeaders(env, "text/html; charset=utf-8"));
+  return applyHeaders(html(unavailablePage("not_found"), 404), contentHeaders(env, "text/html; charset=utf-8"));
 }
 
 export async function handleRequest(

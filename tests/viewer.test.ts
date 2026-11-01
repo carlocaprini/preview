@@ -108,6 +108,12 @@ function iframeSource(page: string): string {
   return match[1].replaceAll("&amp;", "&");
 }
 
+function anchorHref(page: string, label: string): string {
+  const match = page.match(new RegExp(`<a[^>]+href="([^"]+)"[^>]*>${label}</a>`, "u"));
+  if (!match?.[1]) throw new Error(`Missing ${label} link`);
+  return match[1].replaceAll("&amp;", "&");
+}
+
 describe("public and owner viewing", () => {
   let database: SqliteD1;
   let env: PreviewEnv;
@@ -207,8 +213,21 @@ describe("public and owner viewing", () => {
     expect(page).not.toContain("Board");
     expect(page).not.toMatch(/Version\s+1/iu);
     expect(page).toContain("Preview built by&nbsp;");
-    expect(page).toContain('href="https://carlocaprini.com/" target="_blank" rel="noopener noreferrer">Carlo Caprini</a>');
-    expect(page).toContain('href="https://carlocaprini.com/work/" target="_blank" rel="noopener noreferrer">Explore work</a>');
+    const builder = new URL(anchorHref(page, "Carlo Caprini"));
+    const work = new URL(anchorHref(page, "Explore work"));
+    for (const siteUrl of [builder, work]) {
+      expect(siteUrl.searchParams.get("utm_source")).toBe("preview");
+      expect(siteUrl.searchParams.get("utm_medium")).toBe("referral");
+      expect(siteUrl.searchParams.get("utm_campaign")).toBe("shared_content");
+      expect(siteUrl.searchParams.get("utm_content")).toBe(`doc_${plan.contentId.replaceAll("-", "")}`);
+      expect(siteUrl.href).not.toContain(new URL(link.url).pathname.slice(3));
+      expect(siteUrl.href).not.toContain("Board");
+      expect(siteUrl.href).not.toContain(plan.versionId);
+    }
+    expect(builder.pathname).toBe("/");
+    expect(work.pathname).toBe("/work/");
+    expect(page).toContain('target="_blank" rel="noopener noreferrer">Carlo Caprini</a>');
+    expect(page).toContain('target="_blank" rel="noopener noreferrer">Explore work</a>');
     expect(page).not.toContain("Shared by&nbsp;");
     expect(page).toContain('sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"');
     expect(page).not.toContain("allow-top-navigation");
@@ -236,7 +255,9 @@ describe("public and owner viewing", () => {
     const first = await publish("Versioned", "<h1>First</h1>");
     const link = await publishing.createShareLink({ contentId: first.contentId, label: "Stable", validForSeconds: null });
     const oldShell = await handleRequest(new Request(link.url), env, anonymous);
-    const oldSource = iframeSource(await oldShell.text());
+    const oldPage = await oldShell.text();
+    const oldSource = iframeSource(oldPage);
+    const oldReferral = anchorHref(oldPage, "Explore work");
 
     const nextBytes = bytes("<h1>Second</h1>");
     const next = await publishing.startVersion(first.contentId, "html", [{ path: "index.html", size: nextBytes.byteLength }]);
@@ -252,9 +273,25 @@ describe("public and owner viewing", () => {
     expect((await handleRequest(new Request(oldSource), env, anonymous)).status).toBe(404);
 
     const freshShell = await handleRequest(new Request(link.url), env, anonymous);
-    const freshSource = iframeSource(await freshShell.text());
+    const freshPage = await freshShell.text();
+    const freshSource = iframeSource(freshPage);
     expect(freshSource).not.toBe(oldSource);
+    expect(anchorHref(freshPage, "Explore work")).toBe(oldReferral);
     expect(await (await handleRequest(new Request(freshSource), env, anonymous)).text()).toBe("<h1>Second</h1>");
+  });
+
+  it("keeps document attribution stable across share links and distinct across content", async () => {
+    const first = await publish("First", "<h1>First</h1>");
+    const firstLink = await publishing.createShareLink({ contentId: first.contentId, label: "One", validForSeconds: null });
+    const secondLink = await publishing.createShareLink({ contentId: first.contentId, label: "Two", validForSeconds: null });
+    const second = await publish("Second", "<h1>Second</h1>");
+    const otherLink = await publishing.createShareLink({ contentId: second.contentId, label: "Other", validForSeconds: null });
+
+    const hrefs = await Promise.all([firstLink, secondLink, otherLink].map(async (share) =>
+      anchorHref(await (await handleRequest(new Request(share.url), env, anonymous)).text(), "Explore work"),
+    ));
+    expect(hrefs[1]).toBe(hrefs[0]);
+    expect(hrefs[2]).not.toBe(hrefs[0]);
   });
 
   it("invalidates the shell and its pinned assets immediately after revocation", async () => {
@@ -299,8 +336,10 @@ describe("public and owner viewing", () => {
       env,
       anonymous,
     );
-    const source = iframeSource(await shell.text());
+    const page = await shell.text();
+    const source = iframeSource(page);
     expect(shell.status).toBe(200);
+    expect(page).not.toContain("utm_source");
     expect(await (await handleRequest(new Request(source), env, anonymous)).text()).toBe("<h1>Unshared</h1>");
     const tampered = new URL(source);
     tampered.pathname = tampered.pathname.replace("/preview/", "/preview/x");
