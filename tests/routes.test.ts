@@ -12,6 +12,9 @@ const env = {
   ENVIRONMENT: "test",
 } as PreviewEnv;
 
+const productionEnv = { ...env, ENVIRONMENT: "production" } as PreviewEnv;
+const stagingEnv = { ...env, ENVIRONMENT: "staging" } as PreviewEnv;
+
 const context = { waitUntil() {}, passThroughOnException() {}, props: {} } as unknown as PreviewExecutionContext;
 
 function anchorHref(page: string, label: string): string {
@@ -47,7 +50,7 @@ async function loginCookie(password = env.OWNER_PASSWORD): Promise<string | null
 
 describe("origin and authentication routing", () => {
   it("serves the branded public homepage without exposing content", async () => {
-    const response = await handleRequest(new Request("https://app.test/"), env, context);
+    const response = await handleRequest(new Request("https://app.test/"), productionEnv, context);
     expect(response.status).toBe(200);
     const body = await response.text();
     expect(body).toContain("Ideas, experiments and work worth sharing.");
@@ -58,6 +61,10 @@ describe("origin and authentication routing", () => {
     expect(anchorHref(body, "Privacy")).toBe("/privacy/");
     expect(body).not.toContain(">Carlo Caprini</a>");
     expect(body).not.toContain("github.com");
+    expect(body).toContain('name="robots" content="index,follow"');
+    expect(body).toContain('rel="canonical" href="https://app.test/"');
+    expect(body).toContain('property="og:image" content="https://app.test/assets/preview-social.png"');
+    expect(response.headers.get("x-robots-tag")).toBeNull();
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
   });
 
@@ -77,6 +84,7 @@ describe("origin and authentication routing", () => {
     expectPublicAttribution(anchorHref(body, "contact route on Carlo’s site"), "/", "privacy", "#contact");
     expect(body).not.toContain(env.MCP_BEARER_TOKEN);
     expect(body).not.toContain("/s/");
+    expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow, noarchive");
   });
 
   it("serves the public About page and brand assets without a source link", async () => {
@@ -84,13 +92,16 @@ describe("origin and authentication routing", () => {
     expect(redirect.status).toBe(308);
     expect(redirect.headers.get("location")).toBe("/about/");
 
-    const about = await handleRequest(new Request("https://app.test/about/"), env, context);
+    const about = await handleRequest(new Request("https://app.test/about/"), productionEnv, context);
     expect(about.status).toBe(200);
     const body = await about.text();
     expect(body).toContain("A small tool for sharing work without flattening it.");
     expect(body).toContain("single-owner utility");
     expectPublicAttribution(anchorHref(body, "Explore Carlo’s work"), "/work/", "about");
     expect(body).toContain('href="/favicon.svg"');
+    expect(body).toContain('name="robots" content="index,follow"');
+    expect(body).toContain('rel="canonical" href="https://app.test/about/"');
+    expect(about.headers.get("x-robots-tag")).toBeNull();
     expect(body).not.toContain("github.com");
 
     const favicon = await handleRequest(new Request("https://app.test/favicon.svg"), env, context);
@@ -102,6 +113,64 @@ describe("origin and authentication routing", () => {
     expect(social.status).toBe(200);
     expect(social.headers.get("content-type")).toBe("image/png");
     expect(Array.from(new Uint8Array(await social.arrayBuffer()).slice(0, 8))).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+  });
+
+  it("lets crawlers reach noindex responses and publishes an exact production sitemap", async () => {
+    const robots = await handleRequest(new Request("https://app.test/robots.txt"), productionEnv, context);
+    expect(robots.status).toBe(200);
+    expect(robots.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    const robotsBody = await robots.text();
+    expect(robotsBody).toContain("Allow: /");
+    expect(robotsBody).not.toContain("Disallow:");
+    expect(robotsBody).toContain("Sitemap: https://app.test/sitemap.xml");
+    expect(robotsBody).not.toContain("token");
+
+    const sitemap = await handleRequest(new Request("https://app.test/sitemap.xml"), productionEnv, context);
+    expect(sitemap.status).toBe(200);
+    expect(sitemap.headers.get("content-type")).toBe("application/xml; charset=utf-8");
+    const sitemapBody = await sitemap.text();
+    expect(sitemapBody.match(/<loc>/gu)).toHaveLength(2);
+    expect(sitemapBody).toContain("<loc>https://app.test/</loc>");
+    expect(sitemapBody).toContain("<loc>https://app.test/about/</loc>");
+    expect(sitemapBody).not.toContain("privacy");
+    expect(sitemapBody).not.toContain("/s/");
+
+    const contentRobots = await handleRequest(new Request("https://content.test/robots.txt"), env, context);
+    expect(await contentRobots.text()).toBe("User-agent: *\nAllow: /\n");
+    expect(contentRobots.headers.get("x-robots-tag")).toBe("noindex, nofollow, noarchive");
+  });
+
+  it("keeps staging informational pages out of search and withholds its sitemap", async () => {
+    for (const pathname of ["/", "/about/"]) {
+      const response = await handleRequest(new Request(`https://app.test${pathname}`), stagingEnv, context);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow, noarchive");
+      expect(await response.text()).toContain('name="robots" content="noindex,nofollow,noarchive"');
+    }
+
+    const robots = await handleRequest(new Request("https://app.test/robots.txt"), stagingEnv, context);
+    expect(await robots.text()).toBe("User-agent: *\nAllow: /\n");
+    expect(robots.headers.get("x-robots-tag")).toBe("noindex, nofollow, noarchive");
+
+    const sitemap = await handleRequest(new Request("https://app.test/sitemap.xml"), stagingEnv, context);
+    expect(sitemap.status).toBe(404);
+    expect(sitemap.headers.get("x-robots-tag")).toBe("noindex, nofollow, noarchive");
+  });
+
+  it("keeps utility, protected, asset and unavailable responses out of search", async () => {
+    const requests = [
+      new Request("https://app.test/health"),
+      new Request("https://app.test/login"),
+      new Request("https://app.test/admin"),
+      new Request("https://app.test/mcp"),
+      new Request("https://app.test/assets/preview-social.png"),
+      new Request("https://app.test/s/not-a-token"),
+      new Request("https://content.test/not-found"),
+    ];
+    for (const request of requests) {
+      const response = await handleRequest(request, env, context);
+      expect(response.headers.get("x-robots-tag"), new URL(request.url).pathname).toBe("noindex, nofollow, noarchive");
+    }
   });
 
   it("distinguishes unavailable shares from generic public not-found attribution", async () => {

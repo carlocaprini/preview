@@ -158,13 +158,13 @@ createServer(async (request, response) => {
     );
   }
   if (url.pathname === "/unavailable") return send(response, unavailablePage(), "text/html; charset=utf-8", 410);
-  if (url.pathname === "/about/") return send(response, aboutPage(), "text/html; charset=utf-8");
+  if (url.pathname === "/about/") return send(response, aboutPage(appOrigin), "text/html; charset=utf-8");
   if (url.pathname === "/privacy/") return send(response, privacyPage(), "text/html; charset=utf-8");
   if (url.pathname === "/login") return send(response, loginPage(), "text/html; charset=utf-8");
   if (url.pathname === "/admin" || /^\/admin\/contents\/[^/]+$/u.test(url.pathname)) {
     return send(response, adminPage(), "text/html; charset=utf-8");
   }
-  if (url.pathname === "/") return send(response, homePage(), "text/html; charset=utf-8");
+  if (url.pathname === "/") return send(response, homePage(appOrigin), "text/html; charset=utf-8");
   return send(response, "Not found", "text/plain; charset=utf-8", 404);
 }).listen(port, "127.0.0.1", () => console.log(`E2E server listening on http://127.0.0.1:${port}`));
 

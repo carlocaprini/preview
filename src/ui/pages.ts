@@ -30,21 +30,47 @@ function header(homeHref: string, owner = false): string {
   return `<header class="top"><a class="mark" href="${escapeHtml(homeHref)}">Preview</a>${owner ? '<button class="text-button" type="button" data-action="logout">Log out</button>' : ""}</header>`;
 }
 
-function document(title: string, body: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive">${faviconLink}<title>${escapeHtml(title)}</title><style>${styles}${infoStyles}</style></head><body>${body}</body></html>`;
+type PageMetadata = {
+  canonical?: string;
+  description?: string;
+  image?: string;
+  imageAlt?: string;
+  indexable?: boolean;
+};
+
+function document(title: string, body: string, metadata: PageMetadata = {}): string {
+  const robots = metadata.indexable ? "index,follow" : "noindex,nofollow,noarchive";
+  const description = metadata.description ? `<meta name="description" content="${escapeHtml(metadata.description)}">` : "";
+  const canonical = metadata.canonical ? `<link rel="canonical" href="${escapeHtml(metadata.canonical)}">` : "";
+  const social = metadata.indexable && metadata.canonical && metadata.description && metadata.image && metadata.imageAlt
+    ? `<meta property="og:type" content="website"><meta property="og:title" content="${escapeHtml(title)}"><meta property="og:description" content="${escapeHtml(metadata.description)}"><meta property="og:url" content="${escapeHtml(metadata.canonical)}"><meta property="og:image" content="${escapeHtml(metadata.image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="627"><meta property="og:image:alt" content="${escapeHtml(metadata.imageAlt)}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escapeHtml(title)}"><meta name="twitter:description" content="${escapeHtml(metadata.description)}"><meta name="twitter:image" content="${escapeHtml(metadata.image)}"><meta name="twitter:image:alt" content="${escapeHtml(metadata.imageAlt)}">`
+    : "";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="${robots}">${description}${canonical}${social}${faviconLink}<title>${escapeHtml(title)}</title><style>${styles}${infoStyles}</style></head><body>${body}</body></html>`;
 }
 
-export function homePage(): string {
+export function homePage(appOrigin = "https://preview.carlocaprini.com", indexable = true): string {
   const attribution = { page: "home" as const };
   const work = siteReferralUrl("/work/", attribution);
   const thinking = siteReferralUrl("/thinking/", attribution);
   const contact = siteReferralUrl("/#contact", attribution);
-  return document("Preview — Carlo Caprini", `<div class="page">${header("/")}<main><div class="home-copy"><h1>Ideas, experiments and work worth sharing.</h1><p>Interactive HTML experiences shared simply and privately.</p><div class="home-actions"><a class="cta" href="${escapeHtml(work)}">Explore work</a><a class="cta secondary" href="${escapeHtml(thinking)}">Explore thinking</a></div><p class="lost">Lost the link to something I shared with you? <a href="${escapeHtml(contact)}">Get in touch</a> and I’ll help you find it.</p><p class="attribution">A personal sharing space by Carlo Caprini. · <a href="/about/">About Preview</a> · <a href="/privacy/">Privacy</a></p></div></main></div>`);
+  return document("Preview — Interactive work, shared simply", `<div class="page">${header("/")}<main><div class="home-copy"><h1>Ideas, experiments and work worth sharing.</h1><p>Interactive HTML experiences shared simply and privately.</p><div class="home-actions"><a class="cta" href="${escapeHtml(work)}">Explore work</a><a class="cta secondary" href="${escapeHtml(thinking)}">Explore thinking</a></div><p class="lost">Lost the link to something I shared with you? <a href="${escapeHtml(contact)}">Get in touch</a> and I’ll help you find it.</p><p class="attribution">A personal sharing space by Carlo Caprini. · <a href="/about/">About Preview</a> · <a href="/privacy/">Privacy</a></p></div></main></div>`, {
+    canonical: `${appOrigin}/`,
+    description: "A personal space for sharing isolated interactive HTML through revocable links with privacy-minimizing aggregate signals.",
+    image: `${appOrigin}/assets/preview-social.png`,
+    imageAlt: "Preview — Interactive work, shared with deliberate boundaries.",
+    indexable,
+  });
 }
 
-export function aboutPage(): string {
+export function aboutPage(appOrigin = "https://preview.carlocaprini.com", indexable = true): string {
   const work = siteReferralUrl("/work/", { page: "about" });
-  return document("About Preview — Carlo Caprini", `<div class="page">${header("/")}<main class="info-main"><section class="info-hero"><span class="eyebrow">About Preview</span><h1>A small tool for sharing work without flattening it.</h1><p class="lede">I built Preview to send interactive HTML experiences through a simple link while keeping control over access, updates and a few honest engagement signals.</p></section><div class="info-grid"><section class="info-card"><h2>What it does</h2><p>Preview publishes externally authored HTML behind revocable or expiring bearer links. A link can include an optional PDF companion. The owner sees aggregate meaningful views, visible time and completed PDF deliveries.</p></section><section class="info-card"><h2>How it is built</h2><p>One Cloudflare Worker and one D1 database serve two explicit origins. The application shell stays separate from uploaded HTML, which runs inside a sandboxed iframe on the content origin.</p></section><section class="info-card"><h2>What it deliberately is not</h2><p>This is Carlo Caprini’s personal, single-owner utility—not a SaaS, multi-user platform, public content directory or hosted product for third parties. A shared URL is a bearer capability, not a reader identity.</p></section><section class="info-card"><h2>How it was developed</h2><p>The project was developed specification-first with AI-assisted implementation and review. Product decisions, deployment authority and final ownership remain human responsibilities.</p></section></div><section class="info-note"><h2>Deliberate measurement</h2><p>Preview counts a narrow set of aggregate events. It does not claim to identify readers, prove that someone read a document or detect who forwarded a link.</p></section><footer class="info-footer"><a class="text-link" href="/">Back to Preview</a><a class="text-link" href="/privacy/">Privacy</a><a class="text-link" href="${escapeHtml(work)}">Explore Carlo’s work</a></footer></main></div>`);
+  return document("About Preview — How it works and why it exists", `<div class="page">${header("/")}<main class="info-main"><section class="info-hero"><span class="eyebrow">About Preview</span><h1>A small tool for sharing work without flattening it.</h1><p class="lede">I built Preview to send interactive HTML experiences through a simple link while keeping control over access, updates and a few honest engagement signals.</p></section><div class="info-grid"><section class="info-card"><h2>What it does</h2><p>Preview publishes externally authored HTML behind revocable or expiring bearer links. A link can include an optional PDF companion. The owner sees aggregate meaningful views, visible time and completed PDF deliveries.</p></section><section class="info-card"><h2>How it is built</h2><p>One Cloudflare Worker and one D1 database serve two explicit origins. The application shell stays separate from uploaded HTML, which runs inside a sandboxed iframe on the content origin.</p></section><section class="info-card"><h2>What it deliberately is not</h2><p>This is Carlo Caprini’s personal, single-owner utility—not a SaaS, multi-user platform, public content directory or hosted product for third parties. A shared URL is a bearer capability, not a reader identity.</p></section><section class="info-card"><h2>How it was developed</h2><p>The project was developed specification-first with AI-assisted implementation and review. Product decisions, deployment authority and final ownership remain human responsibilities.</p></section></div><section class="info-note"><h2>Deliberate measurement</h2><p>Preview counts a narrow set of aggregate events. It does not claim to identify readers, prove that someone read a document or detect who forwarded a link.</p></section><footer class="info-footer"><a class="text-link" href="/">Back to Preview</a><a class="text-link" href="/privacy/">Privacy</a><a class="text-link" href="${escapeHtml(work)}">Explore Carlo’s work</a></footer></main></div>`, {
+    canonical: `${appOrigin}/about/`,
+    description: "Why Preview exists, how its two-origin Cloudflare architecture works, and the boundaries of this personal sharing utility.",
+    image: `${appOrigin}/assets/preview-social.png`,
+    imageAlt: "Preview — Interactive work, shared with deliberate boundaries.",
+    indexable,
+  });
 }
 
 export function privacyPage(): string {
