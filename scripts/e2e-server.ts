@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
-import { adminPage, homePage, loginPage, unavailablePage, viewerPage } from "../src/ui/pages.ts";
+import { aboutPage, adminPage, homePage, loginPage, unavailablePage, viewerPage } from "../src/ui/pages.ts";
 import { routeAuthApi } from "../src/api/auth.ts";
 import { routeAnalyticsApi } from "../src/api/analytics.ts";
 import { D1PublishingRepository } from "../src/data/repository.ts";
@@ -158,6 +158,7 @@ createServer(async (request, response) => {
     );
   }
   if (url.pathname === "/unavailable") return send(response, unavailablePage(), "text/html; charset=utf-8", 410);
+  if (url.pathname === "/about/") return send(response, aboutPage(), "text/html; charset=utf-8");
   if (url.pathname === "/login") return send(response, loginPage(), "text/html; charset=utf-8");
   if (url.pathname === "/admin" || /^\/admin\/contents\/[^/]+$/u.test(url.pathname)) {
     return send(response, adminPage(), "text/html; charset=utf-8");

@@ -20,7 +20,7 @@ function anchorHref(page: string, label: string): string {
   return match[1].replaceAll("&amp;", "&");
 }
 
-function expectPublicAttribution(href: string, pathname: string, content: "home" | "unavailable" | "not_found", hash = "") {
+function expectPublicAttribution(href: string, pathname: string, content: "home" | "about" | "unavailable" | "not_found", hash = "") {
   const url = new URL(href);
   expect(url.pathname).toBe(pathname);
   expect(url.hash).toBe(hash);
@@ -54,8 +54,35 @@ describe("origin and authentication routing", () => {
     expectPublicAttribution(anchorHref(body, "Explore work"), "/work/", "home");
     expectPublicAttribution(anchorHref(body, "Explore thinking"), "/thinking/", "home");
     expectPublicAttribution(anchorHref(body, "Get in touch"), "/", "home", "#contact");
+    expect(anchorHref(body, "About Preview")).toBe("/about/");
     expect(body).not.toContain(">Carlo Caprini</a>");
+    expect(body).not.toContain("github.com");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
+  it("serves the public About page and brand assets without a source link", async () => {
+    const redirect = await handleRequest(new Request("https://app.test/about"), env, context);
+    expect(redirect.status).toBe(308);
+    expect(redirect.headers.get("location")).toBe("/about/");
+
+    const about = await handleRequest(new Request("https://app.test/about/"), env, context);
+    expect(about.status).toBe(200);
+    const body = await about.text();
+    expect(body).toContain("A small tool for sharing work without flattening it.");
+    expect(body).toContain("single-owner utility");
+    expectPublicAttribution(anchorHref(body, "Explore Carlo’s work"), "/work/", "about");
+    expect(body).toContain('href="/favicon.svg"');
+    expect(body).not.toContain("github.com");
+
+    const favicon = await handleRequest(new Request("https://app.test/favicon.svg"), env, context);
+    expect(favicon.status).toBe(200);
+    expect(favicon.headers.get("content-type")).toBe("image/svg+xml; charset=utf-8");
+    expect(await favicon.text()).toContain("<title id=\"title\">Preview</title>");
+
+    const social = await handleRequest(new Request("https://app.test/assets/preview-social.png"), env, context);
+    expect(social.status).toBe(200);
+    expect(social.headers.get("content-type")).toBe("image/png");
+    expect(Array.from(new Uint8Array(await social.arrayBuffer()).slice(0, 8))).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
   });
 
   it("distinguishes unavailable shares from generic public not-found attribution", async () => {
