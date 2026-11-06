@@ -28,3 +28,9 @@ npm run test:e2e
 Use `cf dev` for local Worker development. Production deployment is intentionally restricted to the GitHub Actions workflow triggered by a push to `main` after the owner merges the complete PR stack.
 
 Pull requests run type checks, unit/integration tests, the production build, dependency audit, and responsive Chromium acceptance tests without deploying. A push to `main` repeats those gates, applies D1 migrations, deploys with the Cloudflare CLI, and probes the production security boundaries.
+
+## License and independent forks
+
+Repository-owned code and documentation are available under the [MIT License](LICENSE). Third-party components retain their own terms; copied browser-delivered code is documented in [Third-party notices](THIRD_PARTY_NOTICES.md).
+
+Independent forks must replace Carlo Caprini's name, domains, credentials, production identifiers, and personal-site attribution. A fork must not imply affiliation with or endorsement by Carlo Caprini.
