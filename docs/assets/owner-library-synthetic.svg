@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+  <title id="title">Synthetic Preview owner library</title>
+  <desc id="desc">A light interface showing two fictional publications, their formats, views, visible time, and active links.</desc>
+  <rect width="1440" height="900" fill="#f7f7f2"/>
+  <rect x="86" y="68" width="1268" height="764" rx="24" fill="#ffffff" stroke="#d9dedc" stroke-width="2"/>
+  <rect x="126" y="111" width="18" height="18" rx="3" fill="#07111d"/>
+  <rect x="133" y="118" width="18" height="18" rx="3" fill="#22d3ee"/>
+  <text x="170" y="132" font-family="Inter,Arial,sans-serif" font-size="25" font-weight="700" fill="#101828">Preview</text>
+  <text x="1179" y="132" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="600" fill="#667085">Owner library</text>
+  <line x1="126" y1="164" x2="1314" y2="164" stroke="#d9dedc" stroke-width="2"/>
+  <text x="126" y="231" font-family="Georgia,serif" font-size="46" font-weight="700" fill="#101828">Published experiences</text>
+  <text x="126" y="271" font-family="Inter,Arial,sans-serif" font-size="19" fill="#667085">Current versions and privacy-minimizing aggregate signals.</text>
+  <rect x="1127" y="207" width="187" height="58" rx="10" fill="#07111d"/>
+  <text x="1220.5" y="243" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="700" fill="#ffffff">Upload package</text>
+  <rect x="126" y="326" width="1188" height="166" rx="14" fill="#fbfcf9" stroke="#d9dedc" stroke-width="2"/>
+  <text x="160" y="370" font-family="Inter,Arial,sans-serif" font-size="24" font-weight="700" fill="#101828">Quarterly narrative</text>
+  <rect x="160" y="392" width="58" height="28" rx="7" fill="#e7f6f5"/>
+  <text x="189" y="411" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" font-weight="800" fill="#096b78">HTML</text>
+  <text x="238" y="412" font-family="Inter,Arial,sans-serif" font-size="15" fill="#667085">Updated today · 2 active links</text>
+  <text x="818" y="380" font-family="Inter,Arial,sans-serif" font-size="14" fill="#667085">MEANINGFUL VIEWS</text>
+  <text x="818" y="430" font-family="Inter,Arial,sans-serif" font-size="38" font-weight="700" fill="#101828">18</text>
+  <text x="1020" y="380" font-family="Inter,Arial,sans-serif" font-size="14" fill="#667085">VISIBLE TIME</text>
+  <text x="1020" y="430" font-family="Inter,Arial,sans-serif" font-size="38" font-weight="700" fill="#101828">23m</text>
+  <text x="1184" y="380" font-family="Inter,Arial,sans-serif" font-size="14" fill="#667085">PDF</text>
+  <text x="1184" y="430" font-family="Inter,Arial,sans-serif" font-size="38" font-weight="700" fill="#101828">4</text>
+  <rect x="126" y="514" width="1188" height="166" rx="14" fill="#fbfcf9" stroke="#d9dedc" stroke-width="2"/>
+  <text x="160" y="558" font-family="Inter,Arial,sans-serif" font-size="24" font-weight="700" fill="#101828">Prototype walkthrough</text>
+  <rect x="160" y="580" width="58" height="28" rx="7" fill="#e7f6f5"/>
+  <text x="189" y="599" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" font-weight="800" fill="#096b78">HTML</text>
+  <text x="238" y="600" font-family="Inter,Arial,sans-serif" font-size="15" fill="#667085">Updated yesterday · 1 active link</text>
+  <text x="818" y="568" font-family="Inter,Arial,sans-serif" font-size="14" fill="#667085">MEANINGFUL VIEWS</text>
+  <text x="818" y="618" font-family="Inter,Arial,sans-serif" font-size="38" font-weight="700" fill="#101828">7</text>
+  <text x="1020" y="568" font-family="Inter,Arial,sans-serif" font-size="14" fill="#667085">VISIBLE TIME</text>
+  <text x="1020" y="618" font-family="Inter,Arial,sans-serif" font-size="38" font-weight="700" fill="#101828">9m</text>
+  <text x="1184" y="568" font-family="Inter,Arial,sans-serif" font-size="14" fill="#667085">PDF</text>
+  <text x="1184" y="618" font-family="Inter,Arial,sans-serif" font-size="38" font-weight="700" fill="#101828">—</text>
+  <rect x="126" y="729" width="8" height="8" rx="2" fill="#087c91"/>
+  <text x="151" y="739" font-family="Inter,Arial,sans-serif" font-size="15" fill="#667085">Synthetic example — no production or customer data</text>
+</svg>
