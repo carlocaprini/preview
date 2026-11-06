@@ -34,3 +34,11 @@ Pull requests run type checks, unit/integration tests, the production build, dep
 Repository-owned code and documentation are available under the [MIT License](LICENSE). Third-party components retain their own terms; copied browser-delivered code is documented in [Third-party notices](THIRD_PARTY_NOTICES.md).
 
 Independent forks must replace Carlo Caprini's name, domains, credentials, production identifiers, and personal-site attribution. A fork must not imply affiliation with or endorsement by Carlo Caprini.
+
+## Contributing and support
+
+Read the [contribution guide](CONTRIBUTING.md) and [support policy](SUPPORT.md)
+before opening an issue or pull request. Issues and contributions are considered
+on a best-effort basis without an SLA, compatibility guarantee, or public
+roadmap. Report vulnerabilities only through the private process described in
+the [security policy](SECURITY.md).
