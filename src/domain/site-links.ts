@@ -1,7 +1,7 @@
 const SITE_ORIGIN = "https://carlocaprini.com";
 const CONTENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
-export type PublicSitePage = "home" | "unavailable" | "not_found";
+export type PublicSitePage = "home" | "about" | "unavailable" | "not_found";
 
 type SiteAttribution =
   | { page: PublicSitePage }

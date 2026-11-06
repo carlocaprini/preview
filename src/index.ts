@@ -17,7 +17,7 @@ import {
 import { appHeaders, applyHeaders, contentHeaders } from "./security/headers.ts";
 import { classifyHost } from "./security/hosts.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "./types.ts";
-import { adminPage, homePage, loginPage, unavailablePage, viewerPage } from "./ui/pages.ts";
+import { aboutPage, adminPage, homePage, loginPage, unavailablePage, viewerPage } from "./ui/pages.ts";
 import { D1ViewerRepository } from "./data/viewer.ts";
 import { D1AssetStore } from "./data/assets.ts";
 import { ViewerService } from "./services/viewer.ts";
@@ -36,7 +36,7 @@ function structuredLog(level: "info" | "error", event: string, request: Request,
           ? "/api/admin/contents/:content/:operation"
           : pathname.startsWith("/api/admin/links/")
             ? "/api/admin/links/:link/:operation"
-            : ["/", "/health", "/login", "/admin", "/mcp", "/api/auth/login", "/api/auth/logout", "/api/admin/contents", "/api/public/measure"].includes(pathname)
+            : ["/", "/about", "/about/", "/favicon.svg", "/health", "/login", "/admin", "/mcp", "/api/auth/login", "/api/auth/logout", "/api/admin/contents", "/api/public/measure"].includes(pathname)
               ? pathname
               : "/other";
   const payload = { level, event, method: request.method, path, detail };
@@ -51,6 +51,14 @@ async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecution
     return applyHeaders(html(homePage()), appHeaders(env));
   }
 
+  if (request.method === "GET" && url.pathname === "/about") {
+    return applyHeaders(new Response(null, { status: 308, headers: { Location: "/about/" } }), appHeaders(env));
+  }
+
+  if (request.method === "GET" && url.pathname === "/about/") {
+    return applyHeaders(html(aboutPage()), appHeaders(env));
+  }
+
   if (request.method === "GET" && url.pathname === "/health") {
     return applyHeaders(json({ status: "ok" }), appHeaders(env));
   }
@@ -63,7 +71,7 @@ async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecution
     return applyHeaders(html(loginPage()), appHeaders(env));
   }
 
-  if (request.method === "GET" && url.pathname.startsWith("/assets/")) {
+  if (request.method === "GET" && (url.pathname.startsWith("/assets/") || url.pathname === "/favicon.svg")) {
     const asset = clientAsset(url.pathname);
     if (asset) {
       return applyHeaders(new Response(asset.body, { headers: { "content-type": asset.mediaType } }), appHeaders(env));

@@ -18,6 +18,23 @@ test("homepage uses the compact Preview header and canonical website actions", a
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
+test("About Preview explains the project without displacing homepage actions", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: "About Preview" }).click();
+  await expect(page).toHaveURL(/\/about\/$/u);
+  await expect(page).toHaveTitle("About Preview — Carlo Caprini");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("A small tool for sharing work without flattening it.");
+  await expect(page.getByRole("heading", { name: "What it deliberately is not" })).toBeVisible();
+  await expect(page.getByText("single-owner utility", { exact: false })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Explore Carlo’s work" })).toHaveAttribute(
+    "href",
+    "https://carlocaprini.com/work/?utm_source=preview&utm_medium=referral&utm_campaign=public_pages&utm_content=about",
+  );
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", "/favicon.svg");
+  await expect(page.getByRole("link", { name: /source|github/u })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
 test("public shell keeps attribution and full-height light and dark content frames", async ({ page }, testInfo) => {
   await page.route("**/api/public/measure", (route) => route.fulfill({ json: { recorded: true } }));
   for (const { theme, pdf } of [{ theme: "light", pdf: false }, { theme: "dark", pdf: true }] as const) {

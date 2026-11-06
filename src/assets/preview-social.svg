@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="627" viewBox="0 0 1200 627" role="img" aria-labelledby="title desc">
+  <title id="title">Preview social card</title>
+  <desc id="desc">Preview wordmark beside the description Interactive work, shared with deliberate boundaries on a light neutral background with a cyan accent.</desc>
+  <rect width="1200" height="627" fill="#f7f7f2"/>
+  <circle cx="1044" cy="-6" r="286" fill="#e7f6f5"/>
+  <path d="M0 515C260 465 520 470 720 510C900 546 1050 520 1200 465V627H0Z" fill="#07111d"/>
+  <rect x="94" y="91" width="54" height="54" rx="9" fill="#07111d"/>
+  <rect x="113" y="110" width="51" height="51" rx="9" fill="#22d3ee"/>
+  <text x="194" y="139" font-family="Inter,Arial,sans-serif" font-size="56" font-weight="760" letter-spacing="-2" fill="#101828">Preview</text>
+  <text x="94" y="274" font-family="Georgia,'Times New Roman',serif" font-size="75" font-weight="700" letter-spacing="-3" fill="#101828">Interactive work,</text>
+  <text x="94" y="359" font-family="Georgia,'Times New Roman',serif" font-size="75" font-weight="700" letter-spacing="-3" fill="#101828">shared with deliberate</text>
+  <text x="94" y="444" font-family="Georgia,'Times New Roman',serif" font-size="75" font-weight="700" letter-spacing="-3" fill="#087c91">boundaries.</text>
+  <text x="94" y="594" font-family="Inter,Arial,sans-serif" font-size="24" font-weight="650" fill="#ffffff">Cloudflare Worker · D1 · two-origin isolation</text>
+</svg>
