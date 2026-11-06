@@ -1,12 +1,20 @@
 # Product Definition — Preview
 
+> **Documento storico.** Questo file conserva la discovery iniziale del 26
+> ottobre 2026. Non descrive più lo stato corrente e non è una fonte di verità
+> per prodotto, architettura o delivery. Le decisioni approvate e lo stato
+> corrente sono nelle issue GitHub e nella documentazione tecnica del
+> repository.
+
 > **Stato:** DRAFT · **Versione:** 0.1 · **Ultimo aggiornamento:** 2026-10-26  
 > **Repository:** `carlocaprini/preview`  
 > **Fase:** Product discovery, prima di specification, technical design e implementazione.
 
 ## 0. Come leggere e aggiornare questo documento
 
-Questa è la **fonte di verità per la definizione del prodotto**. Non è ancora una specifica tecnica e **non autorizza Codex a implementare**.
+Questa sezione descrive il metodo usato durante la discovery iniziale. Era la
+fonte di verità in quella fase; oggi è conservata soltanto come cronologia delle
+ipotesi e delle decisioni ancora da prendere a quella data.
 
 Ogni affermazione significativa è distinta per stato:
 - **CONFERMATO**: espresso e concordato esplicitamente dal product owner.
