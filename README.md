@@ -72,10 +72,11 @@ not guaranteed.
 - [Architecture and security boundaries](docs/architecture.md)
 - [Operations, deployment, backup, and limits](docs/operations.md)
 - [MCP publishing and transfer lifecycle](docs/mcp.md)
+- [Minimal Cloudflare self-hosting guide](docs/self-hosting.md)
 - [Historical product discovery](docs/product-definition.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 
-The detailed self-hosting, security, contribution, support, and privacy guides
+The detailed security, contribution, support, and privacy guides
 are tracked as separate public-release packages so each can be reviewed against
 the behavior it describes.
 
