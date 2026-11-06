@@ -32,6 +32,23 @@ test("About Preview explains the project without displacing homepage actions", a
   );
   await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", "/favicon.svg");
   await expect(page.getByRole("link", { name: /source|github/u })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/privacy/");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
+test("privacy notice states aggregate measurement and retention boundaries", async ({ page }) => {
+  await page.goto("/privacy/");
+  await expect(page).toHaveTitle("Privacy — Preview");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Small, aggregate signals—not reader profiles.");
+  await expect(page.getByText("for up to 24 hours", { exact: false })).toBeVisible();
+  await expect(page.getByText("no automatic time-based deletion", { exact: false })).toBeVisible();
+  await expect(page.getByText("Readers do not receive an identity cookie", { exact: false })).toBeVisible();
+  await expect(page.getByText("Last updated: 6 November 2026")).toBeVisible();
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "noindex,nofollow,noarchive");
+  await expect(page.getByRole("link", { name: "contact route on Carlo’s site" })).toHaveAttribute(
+    "href",
+    "https://carlocaprini.com/?utm_source=preview&utm_medium=referral&utm_campaign=public_pages&utm_content=privacy#contact",
+  );
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
@@ -50,6 +67,7 @@ test("public shell keeps attribution and full-height light and dark content fram
     await expect(attribution.getByText("Shared by Carlo Caprini")).toHaveCount(0);
     const builder = attribution.getByRole("link", { name: "Carlo Caprini" });
     const work = attribution.getByRole("link", { name: "Explore work" });
+    const privacy = attribution.getByRole("link", { name: "Privacy" });
     const documentUtm = "utm_source=preview&utm_medium=referral&utm_campaign=shared_content&utm_content=doc_550e8400e29b41d4a716446655440000";
     await expect(builder).toHaveAttribute("href", `https://carlocaprini.com/?${documentUtm}`);
     await expect(work).toHaveAttribute("href", `https://carlocaprini.com/work/?${documentUtm}`);
@@ -57,6 +75,9 @@ test("public shell keeps attribution and full-height light and dark content fram
       await expect(link).toHaveAttribute("target", "_blank");
       await expect(link).toHaveAttribute("rel", "noopener noreferrer");
     }
+    await expect(privacy).toHaveAttribute("href", "/privacy/");
+    await expect(privacy).toHaveAttribute("target", "_blank");
+    await expect(privacy).toHaveAttribute("rel", "noopener noreferrer");
     await expect(frame).toHaveAttribute("referrerpolicy", "no-referrer");
     await expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-modals allow-popups");
     await expect(frame).not.toHaveAttribute("sandbox", /allow-top-navigation/u);
