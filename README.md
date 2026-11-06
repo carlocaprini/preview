@@ -5,9 +5,9 @@ authored HTML experiences through revocable or expiring bearer links. It keeps
 untrusted content on a separate origin and reports a deliberately narrow set of
 aggregate engagement signals.
 
-It is published as a reference implementation and case study for people
-building personal publishing tools on Cloudflare Workers and D1. It is not a
-hosted product for third parties.
+This repository is intended as a reference implementation and case study for
+people building personal publishing tools on Cloudflare Workers and D1. It is
+not a hosted product for third parties.
 
 > **Release status:** the application is in personal production use. The
 > public-source release is tracked in [issue #25](https://github.com/carlocaprini/preview/issues/25).
