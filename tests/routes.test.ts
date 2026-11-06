@@ -20,7 +20,7 @@ function anchorHref(page: string, label: string): string {
   return match[1].replaceAll("&amp;", "&");
 }
 
-function expectPublicAttribution(href: string, pathname: string, content: "home" | "about" | "unavailable" | "not_found", hash = "") {
+function expectPublicAttribution(href: string, pathname: string, content: "home" | "about" | "privacy" | "unavailable" | "not_found", hash = "") {
   const url = new URL(href);
   expect(url.pathname).toBe(pathname);
   expect(url.hash).toBe(hash);
@@ -55,9 +55,28 @@ describe("origin and authentication routing", () => {
     expectPublicAttribution(anchorHref(body, "Explore thinking"), "/thinking/", "home");
     expectPublicAttribution(anchorHref(body, "Get in touch"), "/", "home", "#contact");
     expect(anchorHref(body, "About Preview")).toBe("/about/");
+    expect(anchorHref(body, "Privacy")).toBe("/privacy/");
     expect(body).not.toContain(">Carlo Caprini</a>");
     expect(body).not.toContain("github.com");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
+  it("serves an accurate noindex privacy notice without private identifiers", async () => {
+    const redirect = await handleRequest(new Request("https://app.test/privacy"), env, context);
+    expect(redirect.status).toBe(308);
+    expect(redirect.headers.get("location")).toBe("/privacy/");
+
+    const response = await handleRequest(new Request("https://app.test/privacy/"), env, context);
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain('name="robots" content="noindex,nofollow,noarchive"');
+    expect(body).toContain("for up to 24 hours");
+    expect(body).toContain("no automatic time-based deletion");
+    expect(body).toContain("Readers do not receive an identity cookie");
+    expect(body).toContain("Last updated: 6 November 2026");
+    expectPublicAttribution(anchorHref(body, "contact route on Carlo’s site"), "/", "privacy", "#contact");
+    expect(body).not.toContain(env.MCP_BEARER_TOKEN);
+    expect(body).not.toContain("/s/");
   });
 
   it("serves the public About page and brand assets without a source link", async () => {
