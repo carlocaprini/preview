@@ -12,12 +12,27 @@ in `sitemap.xml`.
 The Privacy page remains public but `noindex` and outside the sitemap. Shared
 bearer links, unavailable states, login/admin/owner previews, MCP/API routes,
 PDF responses, assets, and every content-origin response retain `noindex` via
-HTML metadata and/or `X-Robots-Tag`. The content origin serves a `robots.txt`
-that disallows every path.
+HTML metadata and/or `X-Robots-Tag`.
+
+Both origins allow crawlers to request routes in `robots.txt`. This is
+intentional: a crawler must be able to fetch a response before it can observe
+its `noindex` directive. The sitemap remains the positive allowlist and contains
+only the two informational URLs above.
 
 Robots directives are not access control. Authentication, signed capabilities,
 share-link validation, expiry, revocation, and origin isolation remain the
 security boundary.
+
+## Environment and release behavior
+
+Only `ENVIRONMENT=production` makes the home and About pages indexable and
+serves the two-URL sitemap. Staging and test environments return `noindex` for
+both pages and do not serve a sitemap.
+
+Deploying this change to production makes those two informational pages
+eligible for indexing even while the source repository remains private. It does
+not add a repository link or expose source code. The source link and repository
+visibility remain separate, explicitly controlled release steps.
 
 ## Post-deploy verification
 

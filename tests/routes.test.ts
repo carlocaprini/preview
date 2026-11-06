@@ -12,6 +12,9 @@ const env = {
   ENVIRONMENT: "test",
 } as PreviewEnv;
 
+const productionEnv = { ...env, ENVIRONMENT: "production" } as PreviewEnv;
+const stagingEnv = { ...env, ENVIRONMENT: "staging" } as PreviewEnv;
+
 const context = { waitUntil() {}, passThroughOnException() {}, props: {} } as unknown as PreviewExecutionContext;
 
 function anchorHref(page: string, label: string): string {
@@ -47,7 +50,7 @@ async function loginCookie(password = env.OWNER_PASSWORD): Promise<string | null
 
 describe("origin and authentication routing", () => {
   it("serves the branded public homepage without exposing content", async () => {
-    const response = await handleRequest(new Request("https://app.test/"), env, context);
+    const response = await handleRequest(new Request("https://app.test/"), productionEnv, context);
     expect(response.status).toBe(200);
     const body = await response.text();
     expect(body).toContain("Ideas, experiments and work worth sharing.");
@@ -89,7 +92,7 @@ describe("origin and authentication routing", () => {
     expect(redirect.status).toBe(308);
     expect(redirect.headers.get("location")).toBe("/about/");
 
-    const about = await handleRequest(new Request("https://app.test/about/"), env, context);
+    const about = await handleRequest(new Request("https://app.test/about/"), productionEnv, context);
     expect(about.status).toBe(200);
     const body = await about.text();
     expect(body).toContain("A small tool for sharing work without flattening it.");
@@ -112,17 +115,17 @@ describe("origin and authentication routing", () => {
     expect(Array.from(new Uint8Array(await social.arrayBuffer()).slice(0, 8))).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
   });
 
-  it("publishes an exact two-URL sitemap and defensive robots policies", async () => {
-    const robots = await handleRequest(new Request("https://app.test/robots.txt"), env, context);
+  it("lets crawlers reach noindex responses and publishes an exact production sitemap", async () => {
+    const robots = await handleRequest(new Request("https://app.test/robots.txt"), productionEnv, context);
     expect(robots.status).toBe(200);
     expect(robots.headers.get("content-type")).toBe("text/plain; charset=utf-8");
     const robotsBody = await robots.text();
-    expect(robotsBody).toContain("Disallow: /s/");
-    expect(robotsBody).toContain("Disallow: /privacy/");
+    expect(robotsBody).toContain("Allow: /");
+    expect(robotsBody).not.toContain("Disallow:");
     expect(robotsBody).toContain("Sitemap: https://app.test/sitemap.xml");
     expect(robotsBody).not.toContain("token");
 
-    const sitemap = await handleRequest(new Request("https://app.test/sitemap.xml"), env, context);
+    const sitemap = await handleRequest(new Request("https://app.test/sitemap.xml"), productionEnv, context);
     expect(sitemap.status).toBe(200);
     expect(sitemap.headers.get("content-type")).toBe("application/xml; charset=utf-8");
     const sitemapBody = await sitemap.text();
@@ -133,8 +136,25 @@ describe("origin and authentication routing", () => {
     expect(sitemapBody).not.toContain("/s/");
 
     const contentRobots = await handleRequest(new Request("https://content.test/robots.txt"), env, context);
-    expect(await contentRobots.text()).toBe("User-agent: *\nDisallow: /\n");
+    expect(await contentRobots.text()).toBe("User-agent: *\nAllow: /\n");
     expect(contentRobots.headers.get("x-robots-tag")).toBe("noindex, nofollow, noarchive");
+  });
+
+  it("keeps staging informational pages out of search and withholds its sitemap", async () => {
+    for (const pathname of ["/", "/about/"]) {
+      const response = await handleRequest(new Request(`https://app.test${pathname}`), stagingEnv, context);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow, noarchive");
+      expect(await response.text()).toContain('name="robots" content="noindex,nofollow,noarchive"');
+    }
+
+    const robots = await handleRequest(new Request("https://app.test/robots.txt"), stagingEnv, context);
+    expect(await robots.text()).toBe("User-agent: *\nAllow: /\n");
+    expect(robots.headers.get("x-robots-tag")).toBe("noindex, nofollow, noarchive");
+
+    const sitemap = await handleRequest(new Request("https://app.test/sitemap.xml"), stagingEnv, context);
+    expect(sitemap.status).toBe(404);
+    expect(sitemap.headers.get("x-robots-tag")).toBe("noindex, nofollow, noarchive");
   });
 
   it("keeps utility, protected, asset and unavailable responses out of search", async () => {

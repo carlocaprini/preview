@@ -48,9 +48,10 @@ function structuredLog(level: "info" | "error", event: string, request: Request,
 async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const appOrigin = new URL(env.APP_ORIGIN).origin;
+  const publicIndexing = env.ENVIRONMENT === "production";
 
   if (request.method === "GET" && url.pathname === "/") {
-    return applyHeaders(html(homePage(appOrigin)), appHeaders(env, { indexable: true }));
+    return applyHeaders(html(homePage(appOrigin, publicIndexing)), appHeaders(env, { indexable: publicIndexing }));
   }
 
   if (request.method === "GET" && url.pathname === "/about") {
@@ -58,7 +59,7 @@ async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecution
   }
 
   if (request.method === "GET" && url.pathname === "/about/") {
-    return applyHeaders(html(aboutPage(appOrigin)), appHeaders(env, { indexable: true }));
+    return applyHeaders(html(aboutPage(appOrigin, publicIndexing)), appHeaders(env, { indexable: publicIndexing }));
   }
 
   if (request.method === "GET" && url.pathname === "/privacy") {
@@ -73,23 +74,18 @@ async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecution
     const body = [
       "User-agent: *",
       "Allow: /",
-      "Allow: /about/",
-      "Disallow: /admin",
-      "Disallow: /api/",
-      "Disallow: /login",
-      "Disallow: /mcp",
-      "Disallow: /preview/",
-      "Disallow: /privacy/",
-      "Disallow: /s/",
-      `Sitemap: ${appOrigin}/sitemap.xml`,
+      ...(publicIndexing ? [`Sitemap: ${appOrigin}/sitemap.xml`] : []),
       "",
     ].join("\n");
-    return applyHeaders(new Response(body, { headers: { "Content-Type": "text/plain; charset=utf-8" } }), appHeaders(env));
+    return applyHeaders(new Response(body, { headers: { "Content-Type": "text/plain; charset=utf-8" } }), appHeaders(env, { indexable: publicIndexing }));
   }
 
   if (request.method === "GET" && url.pathname === "/sitemap.xml") {
+    if (!publicIndexing) {
+      return applyHeaders(new Response("Not found", { status: 404 }), appHeaders(env));
+    }
     const body = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${appOrigin}/</loc></url><url><loc>${appOrigin}/about/</loc></url></urlset>\n`;
-    return applyHeaders(new Response(body, { headers: { "Content-Type": "application/xml; charset=utf-8" } }), appHeaders(env));
+    return applyHeaders(new Response(body, { headers: { "Content-Type": "application/xml; charset=utf-8" } }), appHeaders(env, { indexable: true }));
   }
 
   if (request.method === "GET" && url.pathname === "/health") {
@@ -201,7 +197,7 @@ async function routeContent(
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/robots.txt") {
     return applyHeaders(
-      new Response("User-agent: *\nDisallow: /\n", { headers: { "Content-Type": "text/plain; charset=utf-8" } }),
+      new Response("User-agent: *\nAllow: /\n", { headers: { "Content-Type": "text/plain; charset=utf-8" } }),
       contentHeaders(env, "text/plain; charset=utf-8"),
     );
   }
