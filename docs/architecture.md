@@ -1,6 +1,16 @@
-# Preview V1 architecture
+# Preview architecture
 
-GitHub Issues #1–#11 are the product and delivery source of truth. This document records the implementation that realizes those decisions.
+GitHub Issues #1–#11 record the original product and delivery decisions. This
+document describes the current implementation; issue #25 owns the public-source
+release contract.
+
+## Reusable design and deployed instance
+
+The two-origin Worker/D1 design is reusable. The hostnames, Worker and database
+names, personal-site referrals, credentials, GitHub environment, and production
+verification defaults in this repository describe Carlo Caprini's deployed
+instance. An independent fork must replace those values and preserve the
+isolation contract; it must not reuse Carlo's credentials or imply endorsement.
 
 ## Security boundary
 
