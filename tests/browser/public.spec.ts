@@ -2,6 +2,10 @@ import { expect, test } from "@playwright/test";
 
 test("homepage uses the compact Preview header and canonical website actions", async ({ page }) => {
   await page.goto("/");
+  await expect(page).toHaveTitle("Preview — Interactive work, shared simply");
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "index,follow");
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", /\/$/u);
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", /\/assets\/preview-social\.png$/u);
   const header = page.locator("header.top");
   await expect(header.getByRole("link", { name: "Preview" })).toHaveAttribute("href", "/");
   await expect(header.getByText("Carlo Caprini")).toHaveCount(0);
@@ -22,7 +26,9 @@ test("About Preview explains the project without displacing homepage actions", a
   await page.goto("/");
   await page.getByRole("link", { name: "About Preview" }).click();
   await expect(page).toHaveURL(/\/about\/$/u);
-  await expect(page).toHaveTitle("About Preview — Carlo Caprini");
+  await expect(page).toHaveTitle("About Preview — How it works and why it exists");
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "index,follow");
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", /\/about\/$/u);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("A small tool for sharing work without flattening it.");
   await expect(page.getByRole("heading", { name: "What it deliberately is not" })).toBeVisible();
   await expect(page.getByText("single-owner utility", { exact: false })).toBeVisible();
@@ -78,6 +84,7 @@ test("public shell keeps attribution and full-height light and dark content fram
     await expect(privacy).toHaveAttribute("href", "/privacy/");
     await expect(privacy).toHaveAttribute("target", "_blank");
     await expect(privacy).toHaveAttribute("rel", "noopener noreferrer");
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "noindex,nofollow,noarchive");
     await expect(frame).toHaveAttribute("referrerpolicy", "no-referrer");
     await expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-modals allow-popups");
     await expect(frame).not.toHaveAttribute("sandbox", /allow-top-navigation/u);

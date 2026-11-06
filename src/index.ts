@@ -37,7 +37,7 @@ function structuredLog(level: "info" | "error", event: string, request: Request,
           ? "/api/admin/contents/:content/:operation"
           : pathname.startsWith("/api/admin/links/")
             ? "/api/admin/links/:link/:operation"
-            : ["/", "/about", "/about/", "/privacy", "/privacy/", "/favicon.svg", "/health", "/login", "/admin", "/mcp", "/api/auth/login", "/api/auth/logout", "/api/admin/contents", "/api/public/measure"].includes(pathname)
+            : ["/", "/about", "/about/", "/privacy", "/privacy/", "/robots.txt", "/sitemap.xml", "/favicon.svg", "/health", "/login", "/admin", "/mcp", "/api/auth/login", "/api/auth/logout", "/api/admin/contents", "/api/public/measure"].includes(pathname)
               ? pathname
               : "/other";
   const payload = { level, event, method: request.method, path, detail };
@@ -47,9 +47,10 @@ function structuredLog(level: "info" | "error", event: string, request: Request,
 
 async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecutionContext): Promise<Response> {
   const url = new URL(request.url);
+  const appOrigin = new URL(env.APP_ORIGIN).origin;
 
   if (request.method === "GET" && url.pathname === "/") {
-    return applyHeaders(html(homePage()), appHeaders(env));
+    return applyHeaders(html(homePage(appOrigin)), appHeaders(env, { indexable: true }));
   }
 
   if (request.method === "GET" && url.pathname === "/about") {
@@ -57,7 +58,7 @@ async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecution
   }
 
   if (request.method === "GET" && url.pathname === "/about/") {
-    return applyHeaders(html(aboutPage()), appHeaders(env));
+    return applyHeaders(html(aboutPage(appOrigin)), appHeaders(env, { indexable: true }));
   }
 
   if (request.method === "GET" && url.pathname === "/privacy") {
@@ -66,6 +67,29 @@ async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecution
 
   if (request.method === "GET" && url.pathname === "/privacy/") {
     return applyHeaders(html(privacyPage()), appHeaders(env));
+  }
+
+  if (request.method === "GET" && url.pathname === "/robots.txt") {
+    const body = [
+      "User-agent: *",
+      "Allow: /",
+      "Allow: /about/",
+      "Disallow: /admin",
+      "Disallow: /api/",
+      "Disallow: /login",
+      "Disallow: /mcp",
+      "Disallow: /preview/",
+      "Disallow: /privacy/",
+      "Disallow: /s/",
+      `Sitemap: ${appOrigin}/sitemap.xml`,
+      "",
+    ].join("\n");
+    return applyHeaders(new Response(body, { headers: { "Content-Type": "text/plain; charset=utf-8" } }), appHeaders(env));
+  }
+
+  if (request.method === "GET" && url.pathname === "/sitemap.xml") {
+    const body = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${appOrigin}/</loc></url><url><loc>${appOrigin}/about/</loc></url></urlset>\n`;
+    return applyHeaders(new Response(body, { headers: { "Content-Type": "application/xml; charset=utf-8" } }), appHeaders(env));
   }
 
   if (request.method === "GET" && url.pathname === "/health") {
@@ -175,6 +199,12 @@ async function routeContent(
   env: PreviewEnv,
 ): Promise<Response> {
   const url = new URL(request.url);
+  if (request.method === "GET" && url.pathname === "/robots.txt") {
+    return applyHeaders(
+      new Response("User-agent: *\nDisallow: /\n", { headers: { "Content-Type": "text/plain; charset=utf-8" } }),
+      contentHeaders(env, "text/plain; charset=utf-8"),
+    );
+  }
   const service = new ViewerService(new D1ViewerRepository(env.DB), new D1AssetStore(env.DB), env.SHARE_SIGNING_KEY);
   const shared = url.pathname.match(/^\/s\/([^/]+)\/v\/([^/]+)\/(.+)$/u);
   if (request.method === "GET" && shared?.[1] && shared[2] && shared[3]) {

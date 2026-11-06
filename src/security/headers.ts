@@ -7,8 +7,8 @@ const BASE_HEADERS: Record<string, string> = {
   "Cross-Origin-Resource-Policy": "same-site",
 };
 
-export function appHeaders(env: PreviewEnv): Headers {
-  return new Headers({
+export function appHeaders(env: PreviewEnv, options: { indexable?: boolean } = {}): Headers {
+  const headers = new Headers({
     ...BASE_HEADERS,
     "Cache-Control": "no-store, private",
     "Content-Security-Policy": [
@@ -23,11 +23,14 @@ export function appHeaders(env: PreviewEnv): Headers {
       "connect-src 'self'",
     ].join("; "),
   });
+  if (!options.indexable) headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+  return headers;
 }
 
 export function contentHeaders(env: PreviewEnv, mediaType: string): Headers {
   return new Headers({
     ...BASE_HEADERS,
+    "X-Robots-Tag": "noindex, nofollow, noarchive",
     "Cache-Control": "no-store, private, max-age=0",
     "Content-Type": mediaType,
     "Access-Control-Allow-Origin": "null",
