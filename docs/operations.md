@@ -1,4 +1,4 @@
-# Preview V1 operations
+# Preview operations
 
 ## Required Cloudflare resources
 
@@ -7,7 +7,9 @@
 - Two custom domains: `preview.carlocaprini.com` and `content.preview.carlocaprini.com`
 - Worker-native owner and MCP secrets; no Cloudflare Access subscription
 
-For the first production release, create the named resources before merging the release stack:
+For a new independent deployment, create the named resources before enabling
+its deployment workflow. The names below describe Carlo's instance and must be
+replaced by a fork:
 
 ```sh
 npx cf d1 create --name preview-site
@@ -54,7 +56,10 @@ No Cloudflare Access or Zero Trust organization is required. `/login` accepts on
 
 Local transfer commands default to `https://preview.carlocaprini.com` as the only origin allowed to receive `PREVIEW_MCP_TOKEN`. Set `PREVIEW_MCP_ORIGIN` to another explicit HTTPS origin only for a controlled staging environment. Transfer-plan URLs and IDs are validated before the helper sends the credential.
 
-Keep public `/`, `/assets/viewer.js`, `/api/public/measure`, application-origin `/s/*`, and content-origin `/s/*` unauthenticated. Before the first merge, verify anonymous rejection, owner login/logout, session expiry, Bearer-token rejection/acceptance, and content-origin isolation.
+Keep public `/`, `/assets/viewer.js`, `/api/public/measure`, application-origin
+`/s/*`, and content-origin `/s/*` unauthenticated. Before any new deployment,
+verify anonymous rejection, owner login/logout, session expiry, Bearer-token
+rejection/acceptance, and content-origin isolation.
 
 ## Backup and restore
 
@@ -78,7 +83,14 @@ An optional companion PDF is capped at 10 MiB and consumes the same D1 database 
 
 ### Unverified remote-platform gate
 
-The automated suite proves lifecycle, concurrency, authorization, chunk integrity, partial-stream cancellation and query shape with the in-memory SQLite D1 adapter. It does **not** prove the proposed 10 MiB cap against a remote Cloudflare Worker + D1 database: live CPU time, D1 latency/query accounting, database growth, and cancellation behavior at the network edge remain unverified. Do not describe PDF companions as production-ready until an isolated staging probe uploads, replaces, streams, cancels and cleans up a representative near-cap PDF without touching production data or enabling a paid service.
+The automated suite proves lifecycle, concurrency, authorization, chunk
+integrity, partial-stream cancellation and query shape with the in-memory
+SQLite D1 adapter. It does **not** prove the 10 MiB boundary against a remote
+Cloudflare Worker and D1 database: live CPU time, D1 latency/query accounting,
+database growth, and cancellation behavior near the cap remain unverified. The
+feature is used with this explicit operational limitation; do not claim remote
+near-cap validation until an isolated staging probe uploads, replaces, streams,
+cancels, and cleans up a representative PDF without production data.
 
 V1 caps a package at 20 MiB expanded, 10 MiB per file, and 50 files. ZIP expansion happens in the authenticated browser or local CLI, never in the Worker. The browser inspects declared ZIP sizes before expansion, and the server independently validates the resulting manifest. Each file is transferred through one authenticated request, bounded to its declared byte count, hashed, and stored as 512 KiB D1 chunks. The service rejects oversize manifests before writes and fails closed when D1 is unavailable.
 
