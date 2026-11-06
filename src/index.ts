@@ -7,6 +7,7 @@ import { routeAuthApi } from "./api/auth.ts";
 import { publicPdfResponse, routePdfAdminApi } from "./api/pdf.ts";
 import { routeMcpTransferApi } from "./api/mcp-transfer.ts";
 import { clientAsset } from "./client-assets.ts";
+import { brandAsset } from "./brand-assets.ts";
 import { handleMcp } from "./mcp.ts";
 import {
   authenticateMcp,
@@ -72,7 +73,7 @@ async function routeApp(request: Request, env: PreviewEnv, ctx: PreviewExecution
   }
 
   if (request.method === "GET" && (url.pathname.startsWith("/assets/") || url.pathname === "/favicon.svg")) {
-    const asset = clientAsset(url.pathname);
+    const asset = clientAsset(url.pathname) ?? brandAsset(url.pathname);
     if (asset) {
       return applyHeaders(new Response(asset.body, { headers: { "content-type": asset.mediaType } }), appHeaders(env));
     }
