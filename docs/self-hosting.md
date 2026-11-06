@@ -110,7 +110,7 @@ The pipeline needs:
 - Workers product **Admin** only to create a Worker that does not yet exist;
   reduce it to **Editor** for ordinary deployments after creation.
 - Account **D1 Edit** because the workflow applies migrations directly.
-- Zone **Workers Routes Edit** for the one zone while creating or changing the
+- Zone **Workers Routes Write** for the one zone while creating or changing the
   two Custom Domains. An unchanged existing Worker version does not need this
   zone permission merely to upload code.
 
@@ -121,8 +121,21 @@ and [API token permissions](https://developers.cloudflare.com/fundamentals/api/r
 
 ## 6. Configure GitHub Actions
 
-Create a protected GitHub environment named `production`. Add these six values
-as **environment secrets**, not repository variables:
+Create a GitHub environment named `production` and verify which environment
+features are actually effective for the fork's plan and visibility before
+relying on them. On GitHub Free, environment secrets are available only to
+public repositories. Required reviewers and wait timers are available only to
+public repositories on GitHub Free, Pro, and Team; deployment branch/tag rules
+are available to all public repositories and to private repositories on GitHub
+Pro or Team. A private fork on GitHub Free therefore cannot reproduce this
+repository's environment-secret boundary until it becomes public or the
+account plan changes. Do not silently replace secrets with variables or weaken
+deployment authorization; stop before enabling deployment if the effective
+settings do not meet the intended boundary. See GitHub's [deployments and
+environments documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments).
+
+Once the environment supports the required controls, add these six values as
+**environment secrets**, not repository variables:
 
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
