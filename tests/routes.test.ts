@@ -59,8 +59,9 @@ describe("origin and authentication routing", () => {
     expectPublicAttribution(anchorHref(body, "Get in touch"), "/", "home", "#contact");
     expect(anchorHref(body, "About Preview")).toBe("/about/");
     expect(anchorHref(body, "Privacy")).toBe("/privacy/");
+    expect(anchorHref(body, "View source on GitHub")).toBe("https://github.com/carlocaprini/preview");
+    expect(body).toContain('target="_blank" rel="noopener noreferrer">View source on GitHub</a>');
     expect(body).not.toContain(">Carlo Caprini</a>");
-    expect(body).not.toContain("github.com");
     expect(body).toContain('name="robots" content="index,follow"');
     expect(body).toContain('rel="canonical" href="https://app.test/"');
     expect(body).toContain('property="og:image" content="https://app.test/assets/preview-social.png"');
@@ -82,12 +83,13 @@ describe("origin and authentication routing", () => {
     expect(body).toContain("Readers do not receive an identity cookie");
     expect(body).toContain("Last updated: 6 November 2026");
     expectPublicAttribution(anchorHref(body, "contact route on Carlo’s site"), "/", "privacy", "#contact");
+    expect(body).not.toContain("github.com/carlocaprini/preview");
     expect(body).not.toContain(env.MCP_BEARER_TOKEN);
     expect(body).not.toContain("/s/");
     expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow, noarchive");
   });
 
-  it("serves the public About page and brand assets without a source link", async () => {
+  it("serves the public About page and brand assets with a safe source link", async () => {
     const redirect = await handleRequest(new Request("https://app.test/about"), env, context);
     expect(redirect.status).toBe(308);
     expect(redirect.headers.get("location")).toBe("/about/");
@@ -98,11 +100,12 @@ describe("origin and authentication routing", () => {
     expect(body).toContain("A small tool for sharing work without flattening it.");
     expect(body).toContain("single-owner utility");
     expectPublicAttribution(anchorHref(body, "Explore Carlo’s work"), "/work/", "about");
+    expect(anchorHref(body, "View source on GitHub")).toBe("https://github.com/carlocaprini/preview");
+    expect(body).toContain('target="_blank" rel="noopener noreferrer">View source on GitHub</a>');
     expect(body).toContain('href="/favicon.svg"');
     expect(body).toContain('name="robots" content="index,follow"');
     expect(body).toContain('rel="canonical" href="https://app.test/about/"');
     expect(about.headers.get("x-robots-tag")).toBeNull();
-    expect(body).not.toContain("github.com");
 
     const favicon = await handleRequest(new Request("https://app.test/favicon.svg"), env, context);
     expect(favicon.status).toBe(200);
@@ -178,8 +181,12 @@ describe("origin and authentication routing", () => {
     const notFound = await handleRequest(new Request("https://app.test/does-not-exist"), env, context);
     expect(unavailable.status).toBe(404);
     expect(notFound.status).toBe(404);
-    expectPublicAttribution(anchorHref(await unavailable.text(), "Explore work"), "/work/", "unavailable");
-    expectPublicAttribution(anchorHref(await notFound.text(), "Explore work"), "/work/", "not_found");
+    const unavailableBody = await unavailable.text();
+    const notFoundBody = await notFound.text();
+    expectPublicAttribution(anchorHref(unavailableBody, "Explore work"), "/work/", "unavailable");
+    expectPublicAttribution(anchorHref(notFoundBody, "Explore work"), "/work/", "not_found");
+    expect(unavailableBody).not.toContain("github.com/carlocaprini/preview");
+    expect(notFoundBody).not.toContain("github.com/carlocaprini/preview");
   });
 
   it("redirects an anonymous owner to the local login page", async () => {
@@ -188,7 +195,9 @@ describe("origin and authentication routing", () => {
     expect(response.headers.get("location")).toBe("/login?next=%2Fadmin");
     const login = await handleRequest(new Request("https://app.test/login"), env, context);
     expect(login.status).toBe(200);
-    expect(await login.text()).toContain('id="login-form"');
+    const loginBody = await login.text();
+    expect(loginBody).toContain('id="login-form"');
+    expect(loginBody).not.toContain("github.com/carlocaprini/preview");
   });
 
   it("creates a secure session only for the configured owner password", async () => {
