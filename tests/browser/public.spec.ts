@@ -13,6 +13,10 @@ test("homepage uses the compact Preview header and canonical website actions", a
   await expect(page.getByRole("link", { name: "Explore work" })).toHaveAttribute("href", `https://carlocaprini.com/work/?${homeUtm}`);
   await expect(page.getByRole("link", { name: "Explore thinking" })).toHaveAttribute("href", `https://carlocaprini.com/thinking/?${homeUtm}`);
   await expect(page.getByRole("link", { name: "Get in touch" })).toHaveAttribute("href", `https://carlocaprini.com/?${homeUtm}#contact`);
+  const source = page.getByRole("link", { name: "View source on GitHub" });
+  await expect(source).toHaveAttribute("href", "https://github.com/carlocaprini/preview");
+  await expect(source).toHaveAttribute("target", "_blank");
+  await expect(source).toHaveAttribute("rel", "noopener noreferrer");
   await page.keyboard.press("Tab");
   await expect(header.getByRole("link", { name: "Preview" })).toBeFocused();
   await page.keyboard.press("Tab");
@@ -37,7 +41,10 @@ test("About Preview explains the project without displacing homepage actions", a
     "https://carlocaprini.com/work/?utm_source=preview&utm_medium=referral&utm_campaign=public_pages&utm_content=about",
   );
   await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", "/favicon.svg");
-  await expect(page.getByRole("link", { name: /source|github/u })).toHaveCount(0);
+  const source = page.getByRole("link", { name: "View source on GitHub" });
+  await expect(source).toHaveAttribute("href", "https://github.com/carlocaprini/preview");
+  await expect(source).toHaveAttribute("target", "_blank");
+  await expect(source).toHaveAttribute("rel", "noopener noreferrer");
   await expect(page.getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/privacy/");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
@@ -55,6 +62,7 @@ test("privacy notice states aggregate measurement and retention boundaries", asy
     "href",
     "https://carlocaprini.com/?utm_source=preview&utm_medium=referral&utm_campaign=public_pages&utm_content=privacy#contact",
   );
+  await expect(page.getByRole("link", { name: /source|github/u })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
@@ -74,6 +82,7 @@ test("public shell keeps attribution and full-height light and dark content fram
     const builder = attribution.getByRole("link", { name: "Carlo Caprini" });
     const work = attribution.getByRole("link", { name: "Explore work" });
     const privacy = attribution.getByRole("link", { name: "Privacy" });
+    await expect(attribution.getByRole("link", { name: /source|github/u })).toHaveCount(0);
     const documentUtm = "utm_source=preview&utm_medium=referral&utm_campaign=shared_content&utm_content=doc_550e8400e29b41d4a716446655440000";
     await expect(builder).toHaveAttribute("href", `https://carlocaprini.com/?${documentUtm}`);
     await expect(work).toHaveAttribute("href", `https://carlocaprini.com/work/?${documentUtm}`);
@@ -240,4 +249,5 @@ test("unavailable state never distinguishes expiry from revocation", async ({ pa
     "href",
     "https://carlocaprini.com/work/?utm_source=preview&utm_medium=referral&utm_campaign=public_pages&utm_content=unavailable",
   );
+  await expect(page.getByRole("link", { name: /source|github/u })).toHaveCount(0);
 });
