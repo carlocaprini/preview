@@ -14,6 +14,12 @@ const env = {
 
 const productionEnv = { ...env, ENVIRONMENT: "production" } as PreviewEnv;
 const stagingEnv = { ...env, ENVIRONMENT: "staging" } as PreviewEnv;
+const canonicalProductionEnv = {
+  ...productionEnv,
+  APP_ORIGIN: "https://preview.carlocaprini.com",
+  CONTENT_ORIGIN: "https://content.preview.carlocaprini.com",
+} as PreviewEnv;
+const liveExampleUrl = "https://preview.carlocaprini.com/s/ELERLxWr81LqDeprOoh0eg.zSWIATN3U7rks3G_nmJkEw";
 
 const context = { waitUntil() {}, passThroughOnException() {}, props: {} } as unknown as PreviewExecutionContext;
 
@@ -58,17 +64,29 @@ describe("origin and authentication routing", () => {
     expectPublicAttribution(anchorHref(body, "Explore thinking"), "/thinking/", "home");
     expectPublicAttribution(anchorHref(body, "Get in touch"), "/", "home", "#contact");
     expect(anchorHref(body, "About")).toBe("/about/");
-    expect(anchorHref(body, "See Preview in action")).toBe("https://preview.carlocaprini.com/s/ELERLxWr81LqDeprOoh0eg.zSWIATN3U7rks3G_nmJkEw");
+    expect(body).not.toContain("See Preview in action");
+    expect(body).not.toContain(liveExampleUrl);
     expect(anchorHref(body, "View on GitHub")).toBe("https://github.com/carlocaprini/preview");
     expect(body).toContain('target="_blank" rel="noopener noreferrer">View on GitHub</a>');
     expect(body).toContain("Fork the code and try your own copy. The setup guide is in the repository.");
     expect(body).not.toContain('href="/privacy/"');
     expect(body).not.toContain(">Carlo Caprini</a>");
     expect(body).toContain('name="robots" content="index,follow"');
+    const description = "Preview is how I share interactive reports, prototypes and experiments through links I can update, expire or revoke.";
+    expect(body).toContain(`<meta name="description" content="${description}">`);
+    expect(body).toContain(`<meta property="og:description" content="${description}">`);
+    expect(body).toContain(`<meta name="twitter:description" content="${description}">`);
     expect(body).toContain('rel="canonical" href="https://app.test/"');
     expect(body).toContain('property="og:image" content="https://app.test/assets/preview-social.png"');
     expect(response.headers.get("x-robots-tag")).toBeNull();
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
+  it("emits the hosted example only for the configured canonical instance", async () => {
+    const home = await handleRequest(new Request("https://preview.carlocaprini.com/"), canonicalProductionEnv, context);
+    const about = await handleRequest(new Request("https://preview.carlocaprini.com/about/"), canonicalProductionEnv, context);
+    expect(anchorHref(await home.text(), "See Preview in action")).toBe(liveExampleUrl);
+    expect(anchorHref(await about.text(), "See Preview in action")).toBe(liveExampleUrl);
   });
 
   it("serves an accurate noindex privacy notice without private identifiers", async () => {
@@ -103,13 +121,20 @@ describe("origin and authentication routing", () => {
     expect(body).toContain("A small tool for sharing work without flattening it.");
     expect(body).toContain("Built for one owner");
     expect(body).toContain('href="/about/" aria-current="page"');
-    expect(anchorHref(body, "See Preview in action")).toBe("https://preview.carlocaprini.com/s/ELERLxWr81LqDeprOoh0eg.zSWIATN3U7rks3G_nmJkEw");
+    expect(body).not.toContain("See Preview in action");
+    expect(body).not.toContain(liveExampleUrl);
     expect(anchorHref(body, "Explore the source on GitHub")).toBe("https://github.com/carlocaprini/preview");
     expect(body).toContain('target="_blank" rel="noopener noreferrer">Explore the source on GitHub</a>');
     expect(anchorHref(body, "self-hosting guide")).toBe("https://github.com/carlocaprini/preview/blob/main/docs/self-hosting.md");
     expect(body).not.toContain("Explore Carlo’s work");
+    expect(anchorHref(body, "Read the privacy notice")).toBe("/privacy/");
+    expect(body.match(/href="\/privacy\/"/gu)).toHaveLength(1);
     expect(body).toContain('href="/favicon.svg"');
     expect(body).toContain('name="robots" content="index,follow"');
+    const description = "Why I built Preview, how I share interactive HTML, what the aggregate metrics show, and how to fork the code for your own deployment.";
+    expect(body).toContain(`<meta name="description" content="${description}">`);
+    expect(body).toContain(`<meta property="og:description" content="${description}">`);
+    expect(body).toContain(`<meta name="twitter:description" content="${description}">`);
     expect(body).toContain('rel="canonical" href="https://app.test/about/"');
     expect(about.headers.get("x-robots-tag")).toBeNull();
 
