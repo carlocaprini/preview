@@ -24,8 +24,7 @@ _Synthetic interface example. It contains no customer or production data._
 - Keeps only the latest HTML version durably, with a bounded grace period for
   already-open viewers.
 - Optionally attaches a PDF companion to the current HTML version.
-- Gives the owner a compact browser workspace and an authenticated API/MCP
-  lifecycle for publishing and link management.
+- Manage HTML publications, share links, aggregate analytics and optional PDF companions in the owner interface or through an authenticated MCP server for AI clients and agents.
 - Counts meaningful displayed views, bounded visible time, and completed PDF
   deliveries as daily aggregates—never as identified or unique readers.
 

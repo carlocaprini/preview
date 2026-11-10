@@ -1,4 +1,6 @@
-# Codex MCP publishing
+# MCP integration with AI clients and agents
+
+Preview exposes an authenticated Model Context Protocol (MCP) server for compatible AI clients and agents. It supports publishing and updating HTML, inspecting content and aggregate analytics, managing share links, and handling optional PDF companions.
 
 Preview exposes a stateless Streamable HTTP endpoint at `https://preview.carlocaprini.com/mcp`. One dedicated Bearer token authenticates both the MCP endpoint and its upload-transfer URLs. Keep the token in an environment variable; never put it in `config.toml`, prompts, logs, or repository files.
 

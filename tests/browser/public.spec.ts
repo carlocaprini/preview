@@ -10,6 +10,10 @@ test("homepage separates the live product journey from external referrals", asyn
   await expect(page.locator('meta[name="twitter:description"]')).toHaveAttribute("content", description);
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", /\/$/u);
   await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", /\/assets\/preview-social\.png$/u);
+  await expect(page.getByRole("heading", { name: "Keep the experience intact" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Manage it in the browser or through MCP" })).toBeVisible();
+  await expect(page.getByText("Publish and update HTML, manage expiring or revocable links, and inspect engagement from the owner interface or MCP-connected AI clients and agents.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Measure without guessing" })).toBeVisible();
   const header = page.locator("header.top");
   await expect(header.getByRole("link", { name: "Preview" })).toHaveAttribute("href", "/");
   await expect(header.getByRole("link", { name: "About" })).toHaveAttribute("href", "/about/");
@@ -61,15 +65,20 @@ test("About Preview explains the project and its independent deployment boundary
   await expect(page).toHaveURL(/\/about\/$/u);
   await expect(page).toHaveTitle("About Preview — How it works and why it exists");
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "index,follow");
-  const description = "Why I built Preview, how I share interactive HTML, what the aggregate metrics show, and how to fork the code for your own deployment.";
+  const description = "How Preview shares interactive HTML and lets authorized AI clients and agents manage content, links and aggregate analytics through MCP.";
   await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", description);
   await expect(page.locator('meta[property="og:description"]')).toHaveAttribute("content", description);
   await expect(page.locator('meta[name="twitter:description"]')).toHaveAttribute("content", description);
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", /\/about\/$/u);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("A small tool for sharing work without flattening it.");
-  for (const name of ["Why I built Preview", "From HTML to a shareable link", "A few useful signals", "A small, inspectable project", "Built for one owner"]) {
+  const sectionNames = ["Why I built Preview", "From HTML to a shareable link", "Work through an AI client or agent", "A few useful signals", "A small, inspectable project", "Built for one owner"];
+  for (const name of sectionNames) {
     await expect(page.getByRole("heading", { name })).toBeVisible();
   }
+  await expect(page.locator(".info-section > h2")).toHaveText(sectionNames);
+  await expect(page.getByText("Preview has an authenticated Model Context Protocol (MCP) interface.", { exact: false })).toBeVisible();
+  await expect(page.getByText("These are owner operations. Opening a shared link does not grant access to MCP.")).toBeVisible();
+  await expect(page.getByText("An MCP interface supports the publishing workflow.")).toHaveCount(0);
   await expect(page.locator("header.top").getByRole("link", { name: "About" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("link", { name: "See Preview in action" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Explore Carlo’s work" })).toHaveCount(0);
@@ -82,6 +91,10 @@ test("About Preview explains the project and its independent deployment boundary
   await expect(guide).toHaveAttribute("href", "https://github.com/carlocaprini/preview/blob/main/docs/self-hosting.md");
   await expect(guide).toHaveAttribute("target", "_blank");
   await expect(guide).toHaveAttribute("rel", "noopener noreferrer");
+  const mcpGuide = page.getByRole("link", { name: "MCP setup and tool guide" });
+  await expect(mcpGuide).toHaveAttribute("href", "https://github.com/carlocaprini/preview/blob/main/docs/mcp.md");
+  await expect(mcpGuide).toHaveAttribute("target", "_blank");
+  await expect(mcpGuide).toHaveAttribute("rel", "noopener noreferrer");
   await expect(page.getByRole("link", { name: "Read the privacy notice" })).toHaveAttribute("href", "/privacy/");
   await expect(page.getByRole("link", { name: "Privacy", exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
@@ -101,7 +114,8 @@ test("the example runs through a genuine locally published share", async ({ page
   await expect(owner).toHaveAttribute("aria-pressed", "false");
   await owner.click();
   await expect(owner).toHaveAttribute("aria-pressed", "true");
-  await expect(frame.getByText("Publish authored HTML")).toBeVisible();
+  await expect(frame.getByText("Publish from an AI client")).toBeVisible();
+  await expect(frame.getByText("Connect a compatible AI client or agent through MCP to publish and update HTML, or use Preview’s owner interface.")).toBeVisible();
   await expect(frame.getByText("Open one clear link")).toBeHidden();
   expect(await frame.locator("html").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
