@@ -76,12 +76,12 @@ test("the published example source remains interactive inside the viewer sandbox
   const frame = await element?.contentFrame();
   if (!frame) throw new Error("The example iframe must be available");
   await frame.setContent(source);
-  const assumptions = frame.getByRole("button", { name: "Working assumptions" });
-  await expect(assumptions).toHaveAttribute("aria-pressed", "false");
-  await assumptions.click();
-  await expect(assumptions).toHaveAttribute("aria-pressed", "true");
-  await expect(frame.getByText("Protect the first two hours")).toBeVisible();
-  await expect(frame.getByText("Making", { exact: true })).toBeHidden();
+  const owner = frame.getByRole("button", { name: "For the owner" });
+  await expect(owner).toHaveAttribute("aria-pressed", "false");
+  await owner.click();
+  await expect(owner).toHaveAttribute("aria-pressed", "true");
+  await expect(frame.getByText("Publish authored HTML")).toBeVisible();
+  await expect(frame.getByText("Open one clear link")).toBeHidden();
   expect(await frame.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>A week of focused work — Preview example</title>
+  <title>How Preview works — Live example</title>
   <style>
     :root {
       color-scheme: light;
@@ -17,43 +17,46 @@
     }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--paper); color: var(--ink); }
-    main { width: min(62rem, calc(100% - 2rem)); margin: auto; padding: clamp(2rem, 7vw, 5rem) 0; }
-    header { padding-bottom: 2rem; border-bottom: 1px solid var(--line); }
+    main { width: min(64rem, calc(100% - 2rem)); margin: auto; padding: clamp(2rem, 7vw, 5rem) 0; }
+    header { padding-bottom: 2.25rem; border-bottom: 1px solid var(--line); }
     .eyebrow { color: var(--cyan); font-size: .74rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
-    h1 { max-width: 12ch; margin: .45rem 0 1rem; font: 700 clamp(2.25rem, 6vw, 4.5rem)/1 Georgia, "Times New Roman", serif; letter-spacing: -.045em; }
-    p { max-width: 42rem; color: var(--muted); font-size: 1rem; line-height: 1.65; }
+    h1 { max-width: 12ch; margin: .45rem 0 1rem; font: 700 clamp(2.35rem, 6vw, 4.8rem)/1 Georgia, "Times New Roman", serif; letter-spacing: -.045em; }
+    h2 { margin: 0; font-size: 1rem; letter-spacing: -.015em; }
+    p { max-width: 43rem; color: var(--muted); font-size: 1rem; line-height: 1.65; }
     .lede { color: var(--ink); font-size: clamp(1.05rem, 2vw, 1.24rem); }
-    .report { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(14rem, .65fr); gap: 2.5rem; padding: 2.5rem 0; border-bottom: 1px solid var(--line); }
-    .switcher { display: inline-flex; gap: .25rem; padding: .25rem; border: 1px solid var(--line); border-radius: .65rem; background: #fff; }
-    button { min-height: 2.5rem; padding: .55rem .75rem; border: 0; border-radius: .45rem; background: transparent; color: var(--muted); font: inherit; font-size: .84rem; font-weight: 750; cursor: pointer; }
-    button[aria-pressed="true"] { background: var(--night); color: #fff; }
+    .experience { display: grid; grid-template-columns: minmax(12rem, .58fr) minmax(0, 1.42fr); gap: clamp(2rem, 6vw, 4rem); padding: 2.5rem 0; border-bottom: 1px solid var(--line); }
+    .intro p { margin: .65rem 0 1.25rem; font-size: .9rem; }
+    .switcher { display: grid; gap: .35rem; }
+    button { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 2.75rem; padding: .65rem .75rem; border: 1px solid transparent; border-radius: .5rem; background: transparent; color: var(--muted); font: inherit; font-size: .86rem; font-weight: 750; text-align: left; cursor: pointer; }
+    button::after { content: "→"; opacity: 0; }
+    button[aria-pressed="true"] { border-color: var(--line); background: #fff; color: var(--ink); }
+    button[aria-pressed="true"]::after { opacity: 1; color: var(--cyan); }
     button:focus-visible { outline: 3px solid #12a5bd; outline-offset: 3px; }
-    .view { margin-top: 2rem; }
-    .view[hidden] { display: none; }
-    .bars { display: grid; gap: 1.1rem; }
-    .bar-row { display: grid; grid-template-columns: minmax(7.5rem, 10rem) 1fr 2.5rem; gap: .75rem; align-items: center; }
-    .bar-label { font-size: .88rem; font-weight: 750; }
-    .bar-track { height: .7rem; overflow: hidden; border-radius: 999px; background: #e5e9e7; }
-    .bar-fill { display: block; width: var(--value); height: 100%; border-radius: inherit; background: var(--cyan); }
-    .bar-value { color: var(--muted); font-size: .82rem; text-align: right; }
-    .assumptions { display: grid; gap: 1rem; margin: 0; padding: 0; list-style: none; }
-    .assumptions li { padding: 0 0 1rem 1.25rem; border-bottom: 1px solid var(--line); position: relative; }
-    .assumptions li::before { content: ""; position: absolute; top: .45rem; left: 0; width: .5rem; height: .5rem; border-radius: 2px; background: var(--cyan); }
-    .assumptions strong { display: block; margin-bottom: .25rem; font-size: .92rem; }
-    .assumptions span { color: var(--muted); font-size: .86rem; line-height: 1.5; }
-    aside { align-self: start; padding-left: 1.5rem; border-left: 1px solid var(--line); }
-    aside h2 { margin: 0 0 .7rem; font-size: 1rem; }
-    aside dl { margin: 1.5rem 0 0; }
-    aside div { display: flex; justify-content: space-between; gap: 1rem; padding: .75rem 0; border-top: 1px solid var(--line); }
-    dt { color: var(--muted); font-size: .8rem; }
-    dd { margin: 0; font-size: .82rem; font-weight: 750; }
+    .panel[hidden] { display: none; }
+    .panel-head { padding-bottom: 1.25rem; border-bottom: 1px solid var(--line); }
+    .panel-head h2 { margin-top: .35rem; font: 700 clamp(1.75rem, 4vw, 2.65rem)/1.08 Georgia, "Times New Roman", serif; letter-spacing: -.035em; }
+    .panel-head p { margin: .65rem 0 0; }
+    .steps { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+    .step { display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); gap: .75rem; padding: 1.25rem 0; border-bottom: 1px solid var(--line); counter-increment: step; }
+    .step::before { content: "0" counter(step); color: var(--cyan); font-size: .76rem; font-weight: 800; letter-spacing: .06em; padding-top: .15rem; }
+    .step h3 { margin: 0 0 .35rem; font-size: .96rem; }
+    .step p { margin: 0; font-size: .88rem; }
+    .signal-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin-top: 1.25rem; background: var(--line); border: 1px solid var(--line); }
+    .signal { padding: 1rem; background: var(--paper); }
+    .signal strong { display: block; margin-bottom: .25rem; font: 700 1.35rem/1 Georgia, "Times New Roman", serif; }
+    .signal span { color: var(--muted); font-size: .75rem; line-height: 1.35; }
+    .boundary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(13rem, .62fr); gap: 2rem; padding: 2rem 0; border-bottom: 1px solid var(--line); }
+    .boundary p { margin: .55rem 0 0; font-size: .9rem; }
+    .boundary-note { align-self: start; padding-left: 1.25rem; border-left: 2px solid var(--cyan); color: var(--muted); font-size: .82rem; line-height: 1.55; }
     footer { padding-top: 1.4rem; color: var(--muted); font-size: .78rem; line-height: 1.5; }
-    @media (max-width: 42rem) {
-      main { width: min(100% - 1.25rem, 62rem); padding: 2rem 0; }
-      .report { grid-template-columns: 1fr; gap: 2rem; }
-      aside { padding: 1.5rem 0 0; border-top: 1px solid var(--line); border-left: 0; }
-      .bar-row { grid-template-columns: 1fr auto; }
-      .bar-track { grid-column: 1 / -1; grid-row: 2; }
+    @media (max-width: 44rem) {
+      main { width: min(100% - 1.25rem, 64rem); padding: 2rem 0; }
+      .experience, .boundary { grid-template-columns: 1fr; gap: 1.75rem; }
+      .switcher { grid-template-columns: 1fr 1fr; }
+      button { justify-content: center; }
+      button::after { display: none; }
+      .signal-row { grid-template-columns: 1fr; }
+      .boundary-note { padding: 1rem 0 0; border-top: 1px solid var(--line); border-left: 0; }
     }
     @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
   </style>
@@ -61,49 +64,65 @@
 <body>
   <main>
     <header>
-      <span class="eyebrow">Preview example · Synthetic report</span>
-      <h1>A week of focused work.</h1>
-      <p class="lede">This small interactive report turns a fictional 32-hour creative week into two useful views: where the time went, and which assumptions shaped the plan.</p>
+      <span class="eyebrow">Preview · Live example</span>
+      <h1>Some work is better explored than downloaded.</h1>
+      <p class="lede">Preview is how I publish and share interactive reports, prototypes and experiments without turning them into static attachments. This page is itself a real Preview document.</p>
     </header>
 
-    <section class="report" aria-labelledby="report-title">
-      <div>
-        <h2 id="report-title" class="eyebrow">Explore the report</h2>
-        <div class="switcher" role="group" aria-label="Report view">
-          <button type="button" aria-pressed="true" data-view="allocation">Time allocation</button>
-          <button type="button" aria-pressed="false" data-view="assumptions">Working assumptions</button>
-        </div>
-
-        <div class="view" data-panel="allocation">
-          <div class="bars" aria-label="Hours by activity">
-            <div class="bar-row"><span class="bar-label">Making</span><span class="bar-track"><span class="bar-fill" style="--value: 100%"></span></span><span class="bar-value">14h</span></div>
-            <div class="bar-row"><span class="bar-label">Research</span><span class="bar-track"><span class="bar-fill" style="--value: 57%"></span></span><span class="bar-value">8h</span></div>
-            <div class="bar-row"><span class="bar-label">Collaboration</span><span class="bar-track"><span class="bar-fill" style="--value: 43%"></span></span><span class="bar-value">6h</span></div>
-            <div class="bar-row"><span class="bar-label">Review</span><span class="bar-track"><span class="bar-fill" style="--value: 29%"></span></span><span class="bar-value">4h</span></div>
-          </div>
-        </div>
-
-        <div class="view" data-panel="assumptions" hidden>
-          <ul class="assumptions">
-            <li><strong>Protect the first two hours</strong><span>Making happens before messages and meetings begin.</span></li>
-            <li><strong>Keep research close to decisions</strong><span>Questions are investigated when they can still change the work.</span></li>
-            <li><strong>End with a real review</strong><span>Friday includes time to inspect outcomes and adjust the next plan.</span></li>
-          </ul>
+    <section class="experience" aria-labelledby="experience-title">
+      <div class="intro">
+        <span class="eyebrow" id="experience-title">Two sides of one share</span>
+        <p>Switch perspective to see what Preview keeps simple for the person opening the work and for the person publishing it.</p>
+        <div class="switcher" role="group" aria-label="Preview perspective">
+          <button type="button" aria-pressed="true" data-view="recipient">For the recipient</button>
+          <button type="button" aria-pressed="false" data-view="owner">For the owner</button>
         </div>
       </div>
 
-      <aside>
-        <h2>What this example shows</h2>
-        <p>A published HTML document can retain its layout and interaction while being shared through Preview’s ordinary viewer.</p>
-        <dl>
-          <div><dt>Content</dt><dd>Original and synthetic</dd></div>
-          <div><dt>Dependencies</dt><dd>None</dd></div>
-          <div><dt>Interaction</dt><dd>Two report views</dd></div>
-        </dl>
-      </aside>
+      <div>
+        <section class="panel" data-panel="recipient" aria-labelledby="recipient-title">
+          <div class="panel-head">
+            <span class="eyebrow">Recipient view</span>
+            <h2 id="recipient-title">The experience stays intact.</h2>
+            <p>A deliberate link opens the interactive work directly in the browser, inside Preview’s isolated viewer.</p>
+          </div>
+          <ol class="steps">
+            <li class="step"><div><h3>Open one clear link</h3><p>No account, content directory or public profile stands between the recipient and the shared work.</p></div></li>
+            <li class="step"><div><h3>Explore the real HTML</h3><p>Layout, controls and small interactions remain available instead of being flattened into screenshots or slides.</p></div></li>
+            <li class="step"><div><h3>Use the format that helps</h3><p>When a PDF companion exists, it remains an optional download rather than replacing the browser experience.</p></div></li>
+          </ol>
+        </section>
+
+        <section class="panel" data-panel="owner" aria-labelledby="owner-title" hidden>
+          <div class="panel-head">
+            <span class="eyebrow">Owner view</span>
+            <h2 id="owner-title">Each share stays under control.</h2>
+            <p>The same published work can have separate labelled links, each with its own boundary and stable destination.</p>
+          </div>
+          <ol class="steps">
+            <li class="step"><div><h3>Publish authored HTML</h3><p>Upload a single HTML file or a small package through the owner interface or the MCP publishing workflow.</p></div></li>
+            <li class="step"><div><h3>Create deliberate links</h3><p>Set an expiry, revoke access when needed or keep a link active for a deliberately public example like this one.</p></div></li>
+            <li class="step"><div><h3>Update without another URL</h3><p>Replace the content behind the stable link while preserving its purpose and aggregate history.</p></div></li>
+          </ol>
+          <div class="signal-row" aria-label="Available aggregate signals">
+            <div class="signal"><strong>Views</strong><span>Counted after two displayed seconds</span></div>
+            <div class="signal"><strong>Time</strong><span>Bounded visible-time totals</span></div>
+            <div class="signal"><strong>PDF</strong><span>Completed deliveries, when available</span></div>
+          </div>
+        </section>
+      </div>
     </section>
 
-    <footer>This is a deliberately public demonstration. It contains no client data, personal information or production analytics.</footer>
+    <section class="boundary">
+      <div>
+        <span class="eyebrow">Deliberate boundaries</span>
+        <h2>A small, inspectable, single-owner project.</h2>
+        <p>Preview runs on a Cloudflare Worker and D1 across separate application and content origins. It is not hosted SaaS, a multi-user platform or a public directory.</p>
+      </div>
+      <div class="boundary-note">Aggregate signals are useful context, not reader identity or proof that someone read the work. Owner-authenticated activity is excluded from recipient measurement.</div>
+    </section>
+
+    <footer>This deliberately public example contains no client material or production analytics. Its source lives in the Preview repository and is updated through the same publishing lifecycle it describes.</footer>
   </main>
   <script>
     const buttons = [...document.querySelectorAll("[data-view]")];
