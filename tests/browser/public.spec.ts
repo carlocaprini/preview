@@ -1,52 +1,109 @@
 import { expect, test } from "@playwright/test";
 
-test("homepage uses the compact Preview header and canonical website actions", async ({ page }) => {
+test("homepage separates the live product journey from external referrals", async ({ page }) => {
   await page.goto("/");
   await expect(page).toHaveTitle("Preview — Interactive work, shared simply");
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "index,follow");
+  const description = "Preview is how I share interactive reports, prototypes and experiments through links I can update, expire or revoke.";
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", description);
+  await expect(page.locator('meta[property="og:description"]')).toHaveAttribute("content", description);
+  await expect(page.locator('meta[name="twitter:description"]')).toHaveAttribute("content", description);
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", /\/$/u);
   await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", /\/assets\/preview-social\.png$/u);
   const header = page.locator("header.top");
   await expect(header.getByRole("link", { name: "Preview" })).toHaveAttribute("href", "/");
+  await expect(header.getByRole("link", { name: "About" })).toHaveAttribute("href", "/about/");
+  await expect(header.getByRole("link", { name: "About" })).not.toHaveAttribute("aria-current", "page");
   await expect(header.getByText("Carlo Caprini")).toHaveCount(0);
   const homeUtm = "utm_source=preview&utm_medium=referral&utm_campaign=public_pages&utm_content=home";
   await expect(page.getByRole("link", { name: "Explore work" })).toHaveAttribute("href", `https://carlocaprini.com/work/?${homeUtm}`);
   await expect(page.getByRole("link", { name: "Explore thinking" })).toHaveAttribute("href", `https://carlocaprini.com/thinking/?${homeUtm}`);
   await expect(page.getByRole("link", { name: "Get in touch" })).toHaveAttribute("href", `https://carlocaprini.com/?${homeUtm}#contact`);
-  const source = page.getByRole("link", { name: "View source on GitHub" });
+  await expect(page.getByRole("link", { name: "See Preview in action" })).toHaveCount(0);
+  const source = page.getByRole("link", { name: "View on GitHub" });
   await expect(source).toHaveAttribute("href", "https://github.com/carlocaprini/preview");
   await expect(source).toHaveAttribute("target", "_blank");
   await expect(source).toHaveAttribute("rel", "noopener noreferrer");
+  await expect(page.getByText("Fork the code and try your own copy. The setup guide is in the repository.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Privacy" })).toHaveCount(0);
   await page.keyboard.press("Tab");
   await expect(header.getByRole("link", { name: "Preview" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(header.getByRole("link", { name: "About" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(source).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Explore work" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Explore thinking" })).toBeFocused();
+  if ((page.viewportSize()?.width ?? 0) <= 640) {
+    for (const name of ["Explore work", "Explore thinking"]) {
+      const box = await page.getByRole("link", { name }).boundingBox();
+      expect(box?.height).toBeGreaterThanOrEqual(44);
+    }
+  }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
-test("About Preview explains the project without displacing homepage actions", async ({ page }) => {
+test("homepage referral targets remain usable at 320px", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
   await page.goto("/");
-  await page.getByRole("link", { name: "About Preview" }).click();
+  for (const name of ["Explore work", "Explore thinking"]) {
+    const box = await page.getByRole("link", { name }).boundingBox();
+    expect(box?.height).toBeGreaterThanOrEqual(44);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
+test("About Preview explains the project and its independent deployment boundary", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: "About" }).click();
   await expect(page).toHaveURL(/\/about\/$/u);
   await expect(page).toHaveTitle("About Preview — How it works and why it exists");
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "index,follow");
+  const description = "Why I built Preview, how I share interactive HTML, what the aggregate metrics show, and how to fork the code for your own deployment.";
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", description);
+  await expect(page.locator('meta[property="og:description"]')).toHaveAttribute("content", description);
+  await expect(page.locator('meta[name="twitter:description"]')).toHaveAttribute("content", description);
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", /\/about\/$/u);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("A small tool for sharing work without flattening it.");
-  await expect(page.getByRole("heading", { name: "What it deliberately is not" })).toBeVisible();
-  await expect(page.getByText("single-owner utility", { exact: false })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Explore Carlo’s work" })).toHaveAttribute(
-    "href",
-    "https://carlocaprini.com/work/?utm_source=preview&utm_medium=referral&utm_campaign=public_pages&utm_content=about",
-  );
+  for (const name of ["Why I built Preview", "From HTML to a shareable link", "A few useful signals", "A small, inspectable project", "Built for one owner"]) {
+    await expect(page.getByRole("heading", { name })).toBeVisible();
+  }
+  await expect(page.locator("header.top").getByRole("link", { name: "About" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("link", { name: "See Preview in action" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Explore Carlo’s work" })).toHaveCount(0);
   await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", "/favicon.svg");
-  const source = page.getByRole("link", { name: "View source on GitHub" });
+  const source = page.getByRole("link", { name: "Explore the source on GitHub" });
   await expect(source).toHaveAttribute("href", "https://github.com/carlocaprini/preview");
   await expect(source).toHaveAttribute("target", "_blank");
   await expect(source).toHaveAttribute("rel", "noopener noreferrer");
-  await expect(page.getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/privacy/");
+  const guide = page.getByRole("link", { name: "self-hosting guide" });
+  await expect(guide).toHaveAttribute("href", "https://github.com/carlocaprini/preview/blob/main/docs/self-hosting.md");
+  await expect(guide).toHaveAttribute("target", "_blank");
+  await expect(guide).toHaveAttribute("rel", "noopener noreferrer");
+  await expect(page.getByRole("link", { name: "Read the privacy notice" })).toHaveAttribute("href", "/privacy/");
+  await expect(page.getByRole("link", { name: "Privacy", exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
+test("the example runs through a genuine locally published share", async ({ page, context }) => {
+  const response = await context.request.post("/test/live-example-fixtures");
+  expect(response.status()).toBe(201);
+  const fixture = (await response.json()) as { linkUrl: string };
+  await page.goto(fixture.linkUrl);
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "noindex,nofollow,noarchive");
+  const iframe = page.locator("iframe");
+  await expect(iframe).toHaveAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-modals allow-popups");
+  await expect(iframe).toHaveAttribute("referrerpolicy", "no-referrer");
+  const frame = page.frameLocator("iframe");
+  const owner = frame.getByRole("button", { name: "For the owner" });
+  await expect(owner).toHaveAttribute("aria-pressed", "false");
+  await owner.click();
+  await expect(owner).toHaveAttribute("aria-pressed", "true");
+  await expect(frame.getByText("Publish authored HTML")).toBeVisible();
+  await expect(frame.getByText("Open one clear link")).toBeHidden();
+  expect(await frame.locator("html").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
 
 test("privacy notice states aggregate measurement and retention boundaries", async ({ page }) => {
@@ -57,6 +114,7 @@ test("privacy notice states aggregate measurement and retention boundaries", asy
   await expect(page.getByText("no automatic time-based deletion", { exact: false })).toBeVisible();
   await expect(page.getByText("Readers do not receive an identity cookie", { exact: false })).toBeVisible();
   await expect(page.getByText("Last updated: 6 November 2026")).toBeVisible();
+  await expect(page.locator("header.top").getByRole("link", { name: "About" })).toHaveAttribute("href", "/about/");
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "noindex,nofollow,noarchive");
   await expect(page.getByRole("link", { name: "contact route on Carlo’s site" })).toHaveAttribute(
     "href",
@@ -74,6 +132,7 @@ test("public shell keeps attribution and full-height light and dark content fram
     const frame = page.locator("iframe");
     const attribution = page.locator(".viewer-attribution");
     await expect(header.getByRole("link", { name: "Preview" })).toBeVisible();
+    await expect(header.getByRole("link", { name: "About" })).toHaveCount(0);
     await expect(header.getByText("Shared preview")).toHaveCount(0);
     await expect(header.getByRole("link", { name: "Download PDF" })).toHaveCount(pdf ? 1 : 0);
     if (pdf) await expect(header.getByRole("link", { name: "Download PDF" })).not.toHaveAttribute("href", /utm_/u);
@@ -243,6 +302,7 @@ test("unavailable state never distinguishes expiry from revocation", async ({ pa
   const response = await page.goto("/unavailable");
   expect(response?.status()).toBe(410);
   await expect(page.locator("header.top").getByRole("link", { name: "Preview" })).toBeVisible();
+  await expect(page.locator("header.top").getByRole("link", { name: "About" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "This preview is no longer available." })).toBeVisible();
   await expect(page.getByText("expired or the content may no longer be shared")).toBeVisible();
   await expect(page.getByRole("link", { name: "Explore work" })).toHaveAttribute(

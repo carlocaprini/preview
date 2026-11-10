@@ -17,6 +17,7 @@ const adminScript = readFileSync(`${root}/src/client/admin.js`, "utf8");
 const loginScript = readFileSync(`${root}/src/client/login.js`, "utf8");
 const viewerScript = readFileSync(`${root}/src/client/viewer.js`, "utf8");
 const fflateScript = readFileSync(`${root}/node_modules/fflate/umd/index.js`, "utf8");
+const liveExampleSource = readFileSync(`${root}/examples/live-preview/index.html`, "utf8");
 const port = Number(process.env.E2E_PORT ?? 43917);
 const contentPort = port + 1;
 const appOrigin = `http://127.0.0.1:${port}`;
@@ -97,6 +98,10 @@ createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host}`);
   response.setHeader("referrer-policy", "no-referrer");
   response.setHeader("cache-control", "no-store");
+  if (request.method === "POST" && url.pathname === "/test/live-example-fixtures") {
+    const fixture = await createPublishedFixture("Preview — Live example", "Browser live example", liveExampleSource);
+    return send(response, JSON.stringify(fixture), "application/json; charset=utf-8", 201);
+  }
   if (request.method === "POST" && url.pathname === "/test/analytics-fixtures") {
     const fixture = await createAnalyticsFixture();
     return send(response, JSON.stringify(fixture), "application/json; charset=utf-8", 201);
@@ -195,9 +200,17 @@ createServer(async (request, response) => {
 }).listen(contentPort, "localhost", () => console.log(`E2E content server listening on ${contentOrigin}`));
 
 async function createAnalyticsFixture(): Promise<{ linkUrl: string; linkId: string }> {
-  const payload = new TextEncoder().encode("<!doctype html><title>Analytics fixture</title><h1>Analytics fixture</h1>");
+  return createPublishedFixture(
+    "Analytics fixture",
+    "Browser analytics",
+    "<!doctype html><title>Analytics fixture</title><h1>Analytics fixture</h1>",
+  );
+}
+
+async function createPublishedFixture(title: string, label: string, html: string): Promise<{ linkUrl: string; linkId: string }> {
+  const payload = new TextEncoder().encode(html);
   const plan = await publishing.createContent({
-    title: "Analytics fixture",
+    title,
     sourceFormat: "html",
     files: [{ path: "index.html", size: payload.byteLength }],
   });
@@ -211,7 +224,7 @@ async function createAnalyticsFixture(): Promise<{ linkUrl: string; linkId: stri
     }),
   );
   await publishing.commit(plan.uploadId);
-  const link = await publishing.createShareLink({ contentId: plan.contentId, label: "Browser analytics", validForSeconds: null });
+  const link = await publishing.createShareLink({ contentId: plan.contentId, label, validForSeconds: null });
   const row = database.raw.prepare("SELECT id FROM share_link WHERE content_id = ?").get(plan.contentId) as { id: string };
   return { linkUrl: link.url, linkId: row.id };
 }

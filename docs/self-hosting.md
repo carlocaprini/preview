@@ -47,6 +47,7 @@ Review every item before the first deployment:
 | Deployment verification origins | `.github/workflows/deploy.yml` | `APP_ORIGIN` and `CONTENT_ORIGIN` |
 | Personal-site attribution and UTM destination | `src/domain/site-links.ts` | Site origin and any public attribution intended for your deployment |
 | Public page copy | `src/ui/pages.ts` | Owner name, contact context, and deployment-specific wording |
+| Public live example | `examples/live-preview/index.html`, `src/ui/pages.ts` | Publish the example on your instance, then replace both values in `canonicalLiveExample` |
 | Local MCP transfer default | `scripts/preview-transfer.mjs` | Default application origin, or always set `PREVIEW_MCP_ORIGIN` explicitly |
 | Production probes | `scripts/verify-production.mjs` | Default application and content origins |
 | Documentation and public metadata | `README.md`, `docs/`, repository About settings | Names, domains, contact context, screenshots, and social metadata |
@@ -64,6 +65,30 @@ different isolation model:
 workersDev: false,
 previewUrls: false,
 ```
+
+### Publish an instance-local live example
+
+The homepage and About page show **See Preview in action** only when the
+configured example belongs to the current application origin. An unchanged fork
+therefore omits Carlo's demo instead of sending visitors to Carlo's instance or
+recording activity in its aggregates.
+
+To enable the CTA for an independent deployment:
+
+1. publish [`examples/live-preview/index.html`](../examples/live-preview/index.html)
+   through the normal owner UI or the MCP `preview_create_content` plus transfer
+   workflow described in [MCP publishing](mcp.md);
+2. create one separately labelled, non-expiring link with
+   `preview_create_share_link` after the HTML version is active;
+3. in `src/ui/pages.ts`, replace **both** `canonicalLiveExample.appOrigin` with
+   your exact application origin and `canonicalLiveExample.shareUrl` with that
+   instance's active `/s/…` URL;
+4. keep the source file in the repository and use `preview_upload_version` for
+   later updates so the stable link and its aggregate history are preserved.
+
+The application suppresses the CTA when the configured share URL is not on the
+configured application origin. Do not reuse Carlo's public link, add a static
+`/demo` bypass, seed a database record, or commit MCP credentials.
 
 ## 3. Verify locally before authenticating
 

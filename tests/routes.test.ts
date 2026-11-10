@@ -14,6 +14,12 @@ const env = {
 
 const productionEnv = { ...env, ENVIRONMENT: "production" } as PreviewEnv;
 const stagingEnv = { ...env, ENVIRONMENT: "staging" } as PreviewEnv;
+const canonicalProductionEnv = {
+  ...productionEnv,
+  APP_ORIGIN: "https://preview.carlocaprini.com",
+  CONTENT_ORIGIN: "https://content.preview.carlocaprini.com",
+} as PreviewEnv;
+const liveExampleUrl = "https://preview.carlocaprini.com/s/ELERLxWr81LqDeprOoh0eg.zSWIATN3U7rks3G_nmJkEw";
 
 const context = { waitUntil() {}, passThroughOnException() {}, props: {} } as unknown as PreviewExecutionContext;
 
@@ -53,20 +59,34 @@ describe("origin and authentication routing", () => {
     const response = await handleRequest(new Request("https://app.test/"), productionEnv, context);
     expect(response.status).toBe(200);
     const body = await response.text();
-    expect(body).toContain("Ideas, experiments and work worth sharing.");
+    expect(body).toContain("Some work is better explored than downloaded.");
     expectPublicAttribution(anchorHref(body, "Explore work"), "/work/", "home");
     expectPublicAttribution(anchorHref(body, "Explore thinking"), "/thinking/", "home");
     expectPublicAttribution(anchorHref(body, "Get in touch"), "/", "home", "#contact");
-    expect(anchorHref(body, "About Preview")).toBe("/about/");
-    expect(anchorHref(body, "Privacy")).toBe("/privacy/");
-    expect(anchorHref(body, "View source on GitHub")).toBe("https://github.com/carlocaprini/preview");
-    expect(body).toContain('target="_blank" rel="noopener noreferrer">View source on GitHub</a>');
+    expect(anchorHref(body, "About")).toBe("/about/");
+    expect(body).not.toContain("See Preview in action");
+    expect(body).not.toContain(liveExampleUrl);
+    expect(anchorHref(body, "View on GitHub")).toBe("https://github.com/carlocaprini/preview");
+    expect(body).toContain('target="_blank" rel="noopener noreferrer">View on GitHub</a>');
+    expect(body).toContain("Fork the code and try your own copy. The setup guide is in the repository.");
+    expect(body).not.toContain('href="/privacy/"');
     expect(body).not.toContain(">Carlo Caprini</a>");
     expect(body).toContain('name="robots" content="index,follow"');
+    const description = "Preview is how I share interactive reports, prototypes and experiments through links I can update, expire or revoke.";
+    expect(body).toContain(`<meta name="description" content="${description}">`);
+    expect(body).toContain(`<meta property="og:description" content="${description}">`);
+    expect(body).toContain(`<meta name="twitter:description" content="${description}">`);
     expect(body).toContain('rel="canonical" href="https://app.test/"');
     expect(body).toContain('property="og:image" content="https://app.test/assets/preview-social.png"');
     expect(response.headers.get("x-robots-tag")).toBeNull();
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
+  it("emits the hosted example only for the configured canonical instance", async () => {
+    const home = await handleRequest(new Request("https://preview.carlocaprini.com/"), canonicalProductionEnv, context);
+    const about = await handleRequest(new Request("https://preview.carlocaprini.com/about/"), canonicalProductionEnv, context);
+    expect(anchorHref(await home.text(), "See Preview in action")).toBe(liveExampleUrl);
+    expect(anchorHref(await about.text(), "See Preview in action")).toBe(liveExampleUrl);
   });
 
   it("serves an accurate noindex privacy notice without private identifiers", async () => {
@@ -82,6 +102,7 @@ describe("origin and authentication routing", () => {
     expect(body).toContain("no automatic time-based deletion");
     expect(body).toContain("Readers do not receive an identity cookie");
     expect(body).toContain("Last updated: 6 November 2026");
+    expect(anchorHref(body, "About")).toBe("/about/");
     expectPublicAttribution(anchorHref(body, "contact route on Carlo’s site"), "/", "privacy", "#contact");
     expect(body).not.toContain("github.com/carlocaprini/preview");
     expect(body).not.toContain(env.MCP_BEARER_TOKEN);
@@ -98,12 +119,22 @@ describe("origin and authentication routing", () => {
     expect(about.status).toBe(200);
     const body = await about.text();
     expect(body).toContain("A small tool for sharing work without flattening it.");
-    expect(body).toContain("single-owner utility");
-    expectPublicAttribution(anchorHref(body, "Explore Carlo’s work"), "/work/", "about");
-    expect(anchorHref(body, "View source on GitHub")).toBe("https://github.com/carlocaprini/preview");
-    expect(body).toContain('target="_blank" rel="noopener noreferrer">View source on GitHub</a>');
+    expect(body).toContain("Built for one owner");
+    expect(body).toContain('href="/about/" aria-current="page"');
+    expect(body).not.toContain("See Preview in action");
+    expect(body).not.toContain(liveExampleUrl);
+    expect(anchorHref(body, "Explore the source on GitHub")).toBe("https://github.com/carlocaprini/preview");
+    expect(body).toContain('target="_blank" rel="noopener noreferrer">Explore the source on GitHub</a>');
+    expect(anchorHref(body, "self-hosting guide")).toBe("https://github.com/carlocaprini/preview/blob/main/docs/self-hosting.md");
+    expect(body).not.toContain("Explore Carlo’s work");
+    expect(anchorHref(body, "Read the privacy notice")).toBe("/privacy/");
+    expect(body.match(/href="\/privacy\/"/gu)).toHaveLength(1);
     expect(body).toContain('href="/favicon.svg"');
     expect(body).toContain('name="robots" content="index,follow"');
+    const description = "Why I built Preview, how I share interactive HTML, what the aggregate metrics show, and how to fork the code for your own deployment.";
+    expect(body).toContain(`<meta name="description" content="${description}">`);
+    expect(body).toContain(`<meta property="og:description" content="${description}">`);
+    expect(body).toContain(`<meta name="twitter:description" content="${description}">`);
     expect(body).toContain('rel="canonical" href="https://app.test/about/"');
     expect(about.headers.get("x-robots-tag")).toBeNull();
 
@@ -198,6 +229,7 @@ describe("origin and authentication routing", () => {
     const loginBody = await login.text();
     expect(loginBody).toContain('id="login-form"');
     expect(loginBody).not.toContain("github.com/carlocaprini/preview");
+    expect(loginBody).not.toContain('href="/about/"');
   });
 
   it("creates a secure session only for the configured owner password", async () => {
@@ -210,7 +242,9 @@ describe("origin and authentication routing", () => {
       context,
     );
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain('id="admin-app"');
+    const body = await response.text();
+    expect(body).toContain('id="admin-app"');
+    expect(body).not.toContain('href="/about/"');
   });
 
   it("rejects cross-origin owner mutations", async () => {
