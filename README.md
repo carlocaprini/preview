@@ -1,17 +1,14 @@
 # Preview
 
-Preview is Carlo Caprini's small, single-owner service for sharing externally
-authored HTML experiences through revocable or expiring bearer links. It keeps
-untrusted content on a separate origin and reports a deliberately narrow set of
-aggregate engagement signals.
+I built Preview to share interactive HTML reports and other deliverables without deploying a separate website for each one. It lets me publish content, create links that expire or can be revoked, attach optional PDF companions, and see limited aggregate engagement.
 
-This repository is intended as a reference implementation and case study for
-people building personal publishing tools on Cloudflare Workers and D1. It is
-not a hosted product for third parties.
+I can manage publications and links through a web interface or an authenticated MCP server, including from AI clients and agents. The application runs on Cloudflare Workers and D1, with uploaded content isolated from the owner interface.
 
-> **Release status:** the application is in personal production use. The
-> public-source release is tracked in [issue #25](https://github.com/carlocaprini/preview/issues/25).
-> No support SLA, compatibility promise, or public roadmap is implied.
+Preview is a personal tool I use in production. The source code is public for people interested in how it works or in running their own instance, not a hosted product for third parties.
+
+[See Preview in action](https://preview.carlocaprini.com/) · [Self-hosting guide](docs/self-hosting.md) · [Fork this repository](https://github.com/carlocaprini/preview/fork)
+
+> **Status:** In personal production use with publicly available source code. This is a reference implementation and case study, not a supported SaaS product. There is no support SLA, compatibility promise, or public roadmap.
 
 ![Synthetic Preview owner library with two example publications and aggregate metrics](docs/assets/owner-library-synthetic.svg)
 
@@ -24,7 +21,7 @@ _Synthetic interface example. It contains no customer or production data._
 - Keeps only the latest HTML version durably, with a bounded grace period for
   already-open viewers.
 - Optionally attaches a PDF companion to the current HTML version.
-- Manage HTML publications, share links, aggregate analytics and optional PDF companions in the owner interface or through an authenticated MCP server for AI clients and agents.
+- Manages HTML publications, share links, aggregate analytics and optional PDF companions in the owner interface or through an authenticated MCP server for AI clients and agents.
 - Counts meaningful displayed views, bounded visible time, and completed PDF
   deliveries as daily aggregates—never as identified or unique readers.
 
