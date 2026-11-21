@@ -78,6 +78,14 @@ export interface ContentMetadata {
   };
 }
 
+export interface RenameContentResult {
+  contentId: string;
+  previousTitle: string;
+  title: string;
+  updatedAt: string;
+  changed: boolean;
+}
+
 export interface ContentAnalytics {
   scope: { contentId: string; linkId: string | null };
   allTime: {
@@ -277,6 +285,59 @@ export class D1AdminRepository {
         ...(pdf.approvedVersionId !== undefined ? { approvedVersionId: pdf.approvedVersionId } : {}),
       },
     };
+  }
+
+  async renameContent(
+    contentId: string,
+    expectedTitle: string,
+    title: string,
+    now = new Date(),
+  ): Promise<RenameContentResult> {
+    const normalizedExpected = expectedTitle.trim();
+    const normalizedTitle = title.trim();
+    if (normalizedExpected.length < 1 || normalizedExpected.length > 160) {
+      throw new Error("Expected title must be between 1 and 160 characters");
+    }
+    if (normalizedTitle.length < 1 || normalizedTitle.length > 160) {
+      throw new Error("Title must be between 1 and 160 characters");
+    }
+
+    const current = await this.db
+      .prepare("SELECT title,updated_at FROM content WHERE id = ?")
+      .bind(contentId)
+      .first<Row>();
+    if (!current) throw new Error("Content not found");
+    const currentTitle = String(current.title);
+    if (currentTitle === normalizedTitle) {
+      return {
+        contentId,
+        previousTitle: currentTitle,
+        title: currentTitle,
+        updatedAt: String(current.updated_at),
+        changed: false,
+      };
+    }
+    if (currentTitle !== normalizedExpected) throw new Error("Content title changed");
+
+    const updatedAt = now.toISOString();
+    const updated = await this.db
+      .prepare("UPDATE content SET title = ?,updated_at = ? WHERE id = ? AND title = ?")
+      .bind(normalizedTitle, updatedAt, contentId, normalizedExpected)
+      .run();
+    if ((updated.meta.changes ?? 0) !== 1) {
+      const latest = await this.db.prepare("SELECT title,updated_at FROM content WHERE id = ?").bind(contentId).first<Row>();
+      if (latest && String(latest.title) === normalizedTitle) {
+        return {
+          contentId,
+          previousTitle: normalizedTitle,
+          title: normalizedTitle,
+          updatedAt: String(latest.updated_at),
+          changed: false,
+        };
+      }
+      throw new Error("Content title changed");
+    }
+    return { contentId, previousTitle: currentTitle, title: normalizedTitle, updatedAt, changed: true };
   }
 
   async contentAnalytics(input: {
