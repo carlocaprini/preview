@@ -81,6 +81,20 @@ function createServer(env: PreviewEnv): McpServer {
   );
 
   server.registerTool(
+    "preview_rename_content",
+    {
+      description: "Rename one Preview content item as shown in the owner admin Library. Does not change uploaded files, HTML versions, share links or analytics.",
+      inputSchema: z.object({
+        contentId: z.string().uuid(),
+        expectedTitle: z.string().min(1).max(160),
+        title: z.string().min(1).max(160),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ contentId, expectedTitle, title }) => result(await admin.renameContent(contentId, expectedTitle, title)),
+  );
+
+  server.registerTool(
     "preview_get_analytics",
     {
       description: "Read privacy-preserving aggregate views, visible time and completed PDF deliveries for content or one of its links.",

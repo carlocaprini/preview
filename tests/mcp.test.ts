@@ -7,6 +7,7 @@ import { handleMcp } from "../src/mcp.ts";
 import { handleRequest } from "../src/index.ts";
 import { D1PublishingRepository } from "../src/data/repository.ts";
 import { D1AssetStore } from "../src/data/assets.ts";
+import { D1AdminRepository } from "../src/data/admin.ts";
 import { PublishingService } from "../src/services/publishing.ts";
 import type { PreviewEnv, PreviewExecutionContext } from "../src/types.ts";
 import { SqliteD1 } from "./support/sqlite-d1.ts";
@@ -74,6 +75,7 @@ describe("stateless MCP contract", () => {
       "preview_list_share_links",
       "preview_read_content_file",
       "preview_remove_pdf",
+      "preview_rename_content",
       "preview_revoke_share_link",
       "preview_start_pdf_upload",
       "preview_update_share_link_expiry",
@@ -91,6 +93,11 @@ describe("stateless MCP contract", () => {
     expect(listed.tools.find((tool) => tool.name === "preview_remove_pdf")?.annotations).toMatchObject({
       readOnlyHint: false,
       destructiveHint: true,
+      idempotentHint: true,
+    });
+    expect(listed.tools.find((tool) => tool.name === "preview_rename_content")?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: false,
       idempotentHint: true,
     });
     await client.close();
@@ -147,6 +154,83 @@ describe("stateless MCP contract", () => {
 
     const malformed = await client.callTool({ name: "preview_revoke_share_link", arguments: { linkId: "not-a-real-link-id" } });
     expect(malformed.isError).toBe(true);
+    await client.close();
+  });
+
+  it("renames the content title shown in the admin Library without changing the active publication", async () => {
+    const database = new SqliteD1();
+    const env = testEnv(database as unknown as D1Database);
+    const publishing = new PublishingService(
+      new D1PublishingRepository(env.DB),
+      new D1AssetStore(env.DB),
+      env.APP_ORIGIN,
+      env.SHARE_SIGNING_KEY,
+    );
+    const html = bytes("<h1>Admin title rename</h1>");
+    const plan = await publishing.createContent({
+      title: "Original admin name",
+      sourceFormat: "html",
+      files: [{ path: "index.html", size: html.byteLength }],
+    });
+    await publishing.uploadAsset(
+      plan.uploadId,
+      "index.html",
+      new Request("https://upload.test", {
+        method: "PUT",
+        headers: { "content-length": String(html.byteLength) },
+        body: html.slice().buffer as ArrayBuffer,
+      }),
+    );
+    await publishing.commit(plan.uploadId);
+    const client = await mcpClient(env);
+
+    const renamed = await client.callTool({
+      name: "preview_rename_content",
+      arguments: {
+        contentId: plan.contentId,
+        expectedTitle: "Original admin name",
+        title: "Client review — final",
+      },
+    });
+    expect(renamed.structuredContent).toMatchObject({
+      contentId: plan.contentId,
+      previousTitle: "Original admin name",
+      title: "Client review — final",
+      changed: true,
+    });
+
+    const library = await new D1AdminRepository(env.DB, env.APP_ORIGIN, env.SHARE_SIGNING_KEY).listContents();
+    expect(library).toEqual([
+      expect.objectContaining({ id: plan.contentId, title: "Client review — final", activeVersion: 1 }),
+    ]);
+    const metadata = await client.callTool({ name: "preview_get_content", arguments: { contentId: plan.contentId } });
+    expect(metadata.structuredContent).toMatchObject({
+      title: "Client review — final",
+      publication: { activeVersionId: plan.versionId },
+    });
+
+    const retried = await client.callTool({
+      name: "preview_rename_content",
+      arguments: {
+        contentId: plan.contentId,
+        expectedTitle: "Original admin name",
+        title: "Client review — final",
+      },
+    });
+    expect(retried.structuredContent).toMatchObject({ title: "Client review — final", changed: false });
+    const stale = await client.callTool({
+      name: "preview_rename_content",
+      arguments: {
+        contentId: plan.contentId,
+        expectedTitle: "Another title",
+        title: "Should not win",
+      },
+    });
+    expect(stale.isError).toBe(true);
+    expect(database.raw.prepare("SELECT title,active_version_id FROM content WHERE id = ?").get(plan.contentId)).toEqual({
+      title: "Client review — final",
+      active_version_id: plan.versionId,
+    });
     await client.close();
   });
 
