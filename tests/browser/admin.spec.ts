@@ -36,25 +36,48 @@ const detail = {
   pdfCompanion: { state: "none" },
 };
 
-async function mockAdmin(page: Page) {
+async function mockAdmin(page: Page, contents = [content]) {
   await page.route("**/api/admin/contents", async (route) => {
-    if (route.request().method() === "GET") return route.fulfill({ json: { contents: [content] } });
+    if (route.request().method() === "GET") return route.fulfill({ json: { contents } });
     return route.fallback();
   });
   await page.route("**/api/admin/contents/content-1", (route) => route.fulfill({ json: detail }));
 }
 
-test("library presents private content and aggregate signals", async ({ page }, testInfo) => {
-  await mockAdmin(page);
+test("library groups by active share links and shows metrics only for Active Docs", async ({ page }, testInfo) => {
+  const draft = { ...content, id: "draft", title: "New draft", linkCount: 0, activeLinkCount: 0, meaningfulViews: 0, activeVisibleMs: 0 };
+  const past = { ...content, id: "past", title: "Completed review", activeLinkCount: 0 };
+  await mockAdmin(page, [draft, content, past]);
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "Library" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Spatial product narrative/ })).toBeVisible();
-  await expect(page.getByText("14")).toBeVisible();
-  await expect(page.locator(".content-row")).toHaveCount(1);
+  await expect(page.getByRole("heading", { level: 2 })).toHaveText(["Active Docs", "Internal Docs"]);
+
+  const active = page.getByRole("region", { name: "Active Docs" });
+  const internal = page.getByRole("region", { name: "Internal Docs" });
+  await expect(active.getByRole("link")).toHaveCount(1);
+  await expect(active.getByRole("link")).toHaveAttribute("href", "/admin/contents/content-1");
+  for (const metric of ["1 active link", "14 views", "3m 16s visible"]) {
+    await expect(active.getByText(metric, { exact: true })).toBeVisible();
+  }
+  await expect(internal.getByRole("heading", { level: 3 })).toHaveText([draft.title, past.title]);
+  await expect(internal.getByText(/^Updated /u)).toHaveCount(2);
+  await expect(internal.getByText(/\b(?:links?|views?|visible)\b/iu)).toHaveCount(0);
+  await expect(internal.getByRole("link", { name: /Completed review/u })).toHaveAttribute("href", "/admin/contents/past");
   await expect(page.getByText("Owner workspace")).toHaveCount(0);
   await expect(page.locator("header.top").getByRole("button", { name: "Log out" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("library.png"), fullPage: true });
 });
+
+for (const activeLinkCount of [0, 1]) {
+  test(`library keeps both sections with ${activeLinkCount} active links on its only document`, async ({ page }) => {
+    await mockAdmin(page, [{ ...content, activeLinkCount }]);
+    await page.goto("/admin");
+
+    const emptySection = page.getByRole("region", { name: activeLinkCount ? "Internal Docs" : "Active Docs" });
+    await expect(emptySection.getByText(activeLinkCount ? "No internal documents." : "No documents with active share links.")).toBeVisible();
+    await expect(page.getByRole("link", { name: /Spatial product narrative/u })).toBeVisible();
+  });
+}
 
 test("content detail exposes only the current update and reversible share controls", async ({ page }, testInfo) => {
   await mockAdmin(page);
