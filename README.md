@@ -10,9 +10,9 @@ Preview is a personal tool I use in production. The source code is public for pe
 
 > **Status:** In personal production use with publicly available source code. This is a reference implementation and case study, not a supported SaaS product. There is no support SLA, compatibility promise, or public roadmap.
 
-![Synthetic Preview owner library with two example publications and aggregate metrics](docs/assets/owner-library-synthetic.svg)
+![Synthetic owner library showing Active Docs with engagement metrics and Internal Docs with an update date](docs/assets/owner-library-synthetic.svg)
 
-_Synthetic interface example. It contains no customer or production data._
+The owner library lists documents with a usable share link under **Active Docs**. Documents with no links or only expired or revoked links appear under **Internal Docs**, with their title and update date. The illustration uses synthetic data.
 
 ## What it does
 

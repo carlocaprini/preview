@@ -203,9 +203,38 @@ function pdfPanel(item) {
   return `<section class="panel"><header><div><span class="eyebrow">Companion</span><h2>PDF</h2></div></header><div class="panel-empty"><strong>${escapeHtml(pdf.fileName)}</strong><p>${formatBytes(pdf.size)} · Uploaded ${formatDate(pdf.uploadedAt)}</p>${outdated ? '<p class="progress-note">PDF needs confirmation for this HTML version. It is hidden from shared links until confirmed or replaced.</p>' : '<p>Available from every active share link.</p>'}<div class="actions">${outdated ? `<button class="button" data-action="pdf-confirm" data-pdf-id="${escapeHtml(pdf.id)}" data-version-id="${escapeHtml(item.activeVersionId)}">Confirm reuse</button>` : ""}<button class="button secondary" data-action="pdf-upload">${outdated ? "Upload replacement" : "Replace PDF"}</button><button class="text-button danger" data-action="pdf-remove">Remove PDF</button></div></div></section>`;
 }
 
+function libraryRow(item) {
+  const stats = item.activeLinkCount > 0 ? `
+    <div class="content-row-stats">
+      <span class="status">${item.activeLinkCount} active link${item.activeLinkCount === 1 ? "" : "s"}</span>
+      <span>${item.meaningfulViews} view${item.meaningfulViews === 1 ? "" : "s"}</span>
+      <span>${formatDuration(item.activeVisibleMs)} visible</span>
+    </div>` : "";
+  return `<li><a class="content-row" href="/admin/contents/${encodeURIComponent(item.id)}">
+    <div class="content-row-main"><h3>${escapeHtml(item.title)}</h3><span class="row-meta">Updated ${formatDate(item.updatedAt)}</span></div>
+    ${stats}
+  </a></li>`;
+}
+
+function libraryGroup(id, title, items, emptyMessage) {
+  return `<section class="library-group" aria-labelledby="${id}">
+    <h2 id="${id}">${title}</h2>
+    ${items.length ? `<ul class="library-list">${items.map(libraryRow).join("")}</ul>` : `<p class="row-meta">${emptyMessage}</p>`}
+  </section>`;
+}
+
 async function renderLibrary() {
   const { contents } = await api("/api/admin/contents");
-  root.innerHTML = `<section class="admin-head"><h1>Library</h1><button class="button" data-action="upload">Add content</button></section>${contents.length ? `<div class="library-list">${contents.map((item) => `<a class="content-row" href="/admin/contents/${encodeURIComponent(item.id)}"><div class="content-row-main"><h2>${escapeHtml(item.title)}</h2><span class="row-meta">Updated ${formatDate(item.updatedAt)}</span></div><div class="content-row-stats"><span class="status">${item.activeLinkCount} active link${item.activeLinkCount === 1 ? "" : "s"}</span><span>${item.meaningfulViews} view${item.meaningfulViews === 1 ? "" : "s"}</span><span>${formatDuration(item.activeVisibleMs)} visible</span></div></a>`).join("")}</div>` : '<section class="empty"><span class="empty-mark">◇</span><h2>Your private library is empty</h2><p>Upload one HTML file or a ZIP package. Nothing becomes public until you create a share link.</p><button class="button" data-action="upload">Add your first item</button></section>'}`;
+  const header = '<section class="admin-head"><h1>Library</h1><button class="button" data-action="upload">Add content</button></section>';
+  if (!contents.length) {
+    root.innerHTML = header + '<section class="empty"><span class="empty-mark">◇</span><h2>Your private library is empty</h2><p>Upload one HTML file or a ZIP package. Nothing becomes public until you create a share link.</p><button class="button" data-action="upload">Add your first item</button></section>';
+    return;
+  }
+  const active = contents.filter((item) => item.activeLinkCount > 0);
+  const internal = contents.filter((item) => item.activeLinkCount === 0);
+  root.innerHTML = header
+    + libraryGroup("active-docs", "Active Docs", active, "No documents with active share links.")
+    + libraryGroup("internal-docs", "Internal Docs", internal, "No internal documents.");
 }
 
 async function renderDetail() {
